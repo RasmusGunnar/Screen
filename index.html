@@ -43,7 +43,7 @@
 </html>
 subra_attendance.html
 Ny
-+1622
++2684
 -0
 
 <!DOCTYPE html>
@@ -78,6 +78,151 @@ Ny
       font-size: clamp(15px, 0.9vw + 12px, 18px);
     }
 
+    function populateGuestHosts() {
+      if (!guestHostSelect) return;
+      const previous = guestHostSelect.value;
+      const employees = [...state.employees.values()].sort((a, b) => {
+        const dept = a.department.localeCompare(b.department, 'da');
+        if (dept !== 0) return dept;
+        return a.name.localeCompare(b.name, 'da');
+      });
+      guestHostSelect.innerHTML = '<option value="">Vælg medarbejder</option>';
+      employees.forEach((employee) => {
+        const option = document.createElement('option');
+        option.value = employee.id;
+        option.textContent = `${employee.name} · ${employee.department}`;
+        guestHostSelect.appendChild(option);
+      });
+      if (previous && state.employees.has(previous)) {
+        guestHostSelect.value = previous;
+      }
+    }
+
+    function overviewCard(title, value, description) {
+      return `<article class="overview-card"><h4>${title}</h4><strong>${value}</strong><small>${description}</small></article>`;
+    }
+
+    function renderOverview() {
+      if (!overviewStats) return;
+      const employees = [...state.employees.values()];
+      const activeVisitors = state.visitors.filter((visitor) => visitor.status !== 'out' && !visitor.checkedOutAt);
+      const presentEmployees = employees.filter((employee) => employee.status === 'in' && !(employee.leave && isOnLeave(employee.leave)));
+      const leaveEmployees = employees.filter((employee) => employee.leave && isOnLeave(employee.leave));
+      const outEmployees = employees.length - presentEmployees.length - leaveEmployees.length;
+      const visitorsToday = state.visitors.filter((visitor) => isToday(visitor.checkedInAt));
+
+      if (!employees.length && !state.visitors.length) {
+        overviewStats.innerHTML = '<div class="empty-state">Tilføj medarbejdere og registrer besøg for at se overblik her.</div>';
+        return;
+      }
+
+      const leaveSummary = leaveEmployees.length
+        ? leaveEmployees.slice(0, 2).map((employee) => employee.name).join(', ') + (leaveEmployees.length > 2 ? ' +' : '')
+        : 'Ingen fravær registreret';
+
+      const activeSummary = `${presentEmployees.length} medarbejdere · ${activeVisitors.length} gæster`;
+      const todaySummary = visitorsToday.length
+        ? `${visitorsToday.length} besøgende registreret i dag`
+        : 'Ingen gæster registreret endnu i dag';
+      const visitorDescription = activeVisitors.length
+        ? `${todaySummary} <span class="visitor-pill">Gæster til stede</span>`
+        : todaySummary;
+
+      overviewStats.innerHTML = [
+        overviewCard('I huset lige nu', presentEmployees.length + activeVisitors.length, activeSummary),
+        overviewCard('Registrerede besøg i dag', visitorsToday.length, visitorDescription),
+        overviewCard('Medarbejdere ude af huset', Math.max(outEmployees, 0), 'Planlagte møder, fjernarbejde m.m.'),
+        overviewCard('Fravær & orlov', leaveEmployees.length, leaveSummary),
+      ].join('');
+    }
+
+    function renderRecentVisitors() {
+      if (!recentVisitorsList || !recentVisitorsSection) return;
+      const visitors = [...state.visitors]
+        .sort((a, b) => {
+          const aDate = toDate(a.checkedInAt)?.getTime() || 0;
+          const bDate = toDate(b.checkedInAt)?.getTime() || 0;
+          return bDate - aDate;
+        })
+        .slice(0, 4);
+
+      if (!visitors.length) {
+        recentVisitorsSection.hidden = true;
+        recentVisitorsList.innerHTML = '<div class="empty-state">Ingen besøgende registreret endnu.</div>';
+        return;
+      }
+
+      recentVisitorsSection.hidden = false;
+      const fragment = document.createDocumentFragment();
+      visitors.forEach((visitor) => {
+        const card = document.createElement('article');
+        card.className = 'visitor-card';
+        card.innerHTML = `
+          <div class="name">${visitor.name}${visitor.company ? ` · ${visitor.company}` : ''}</div>
+          <div class="meta">
+            <span class="host">Vært: ${visitor.hostName || 'Ukendt'}</span>
+            <span>Indtjekket: ${formatDateTime(visitor.checkedInAt)}</span>
+            <span>Forventet afgang: ${formatTimeValue(visitor.expectedDeparture)}</span>
+          </div>
+          <div style="font-size:13px;color:var(--muted);">${visitor.purpose || 'Ingen note'}</div>
+        `;
+        if (visitor.status !== 'out' && !visitor.checkedOutAt) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = 'Tjek gæst ud';
+          btn.addEventListener('click', () => checkoutVisitor(visitor.id));
+          card.appendChild(btn);
+        }
+        fragment.appendChild(card);
+      });
+      recentVisitorsList.innerHTML = '';
+      recentVisitorsList.appendChild(fragment);
+    }
+
+    function renderManagerVisitorList() {
+      if (!managerVisitorList) return;
+      const visitors = [...state.visitors]
+        .sort((a, b) => {
+          const aDate = toDate(a.checkedInAt)?.getTime() || 0;
+          const bDate = toDate(b.checkedInAt)?.getTime() || 0;
+          return bDate - aDate;
+        });
+      if (!visitors.length) {
+        managerVisitorList.innerHTML = '<div class="empty-state">Ingen besøgende registreret endnu.</div>';
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      visitors.forEach((visitor) => {
+        const card = document.createElement('article');
+        card.className = 'visitor-card manager';
+        card.innerHTML = `
+          <div class="name">${visitor.name}${visitor.company ? ` · ${visitor.company}` : ''}</div>
+          <div class="meta">
+            <span>Vært: ${visitor.hostName || 'Ukendt'}</span>
+            <span>Ind: ${formatDateTime(visitor.checkedInAt)}</span>
+            <span>Ud: ${visitor.checkedOutAt ? formatDateTime(visitor.checkedOutAt) : '—'}</span>
+          </div>
+          <div style="font-size:13px;color:var(--muted);">${visitor.purpose || 'Ingen note'}${visitor.vehicle ? ` · Bil: ${visitor.vehicle}` : ''}</div>
+        `;
+        if (visitor.status !== 'out' && !visitor.checkedOutAt) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = 'Tjek ud';
+          btn.addEventListener('click', () => checkoutVisitor(visitor.id));
+          card.appendChild(btn);
+        }
+        fragment.appendChild(card);
+      });
+      managerVisitorList.innerHTML = '';
+      managerVisitorList.appendChild(fragment);
+    }
+
+    function renderVisitors() {
+      renderRecentVisitors();
+      renderManagerVisitorList();
+      renderOverview();
+    }
+
     *, *::before, *::after {
       box-sizing: border-box;
     }
@@ -95,7 +240,9 @@ Ny
       display: flex;
       flex-direction: column;
       background: linear-gradient(135deg, #f8fafc 0%, #edf1f5 55%, #f7f5f0 100%);
-      overflow: hidden;
+      min-height: 100vh;
+      overflow-x: hidden;
+      overflow-y: auto;
     }
 
     button, input, select {
@@ -232,12 +379,13 @@ Ny
       flex: 1;
       display: none;
       padding: clamp(20px, 4vw, 48px);
-      overflow: hidden;
+      overflow: auto;
     }
 
     .app-shell.is-visible {
       display: flex;
       flex-direction: column;
+      min-height: 100%;
     }
 
     .app-card {
@@ -302,7 +450,7 @@ Ny
       flex: 1;
       min-height: 0;
       display: grid;
-      grid-template-columns: 320px 1fr;
+      grid-template-columns: minmax(280px, 340px) 1fr;
     }
 
     .content > aside {
@@ -541,6 +689,214 @@ Ny
       background: rgba(255,255,255,0.7);
     }
 
+    .overview {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      margin-bottom: clamp(18px, 3vw, 32px);
+    }
+
+    .overview-card {
+      padding: 18px 20px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.88);
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      box-shadow: 0 18px 32px rgba(15, 23, 42, 0.12);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .overview-card h4 {
+      margin: 0;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: rgba(15, 23, 42, 0.55);
+    }
+
+    .overview-card strong {
+      font-family: var(--font-display);
+      font-size: clamp(26px, 4vw, 34px);
+      font-weight: 700;
+    }
+
+    .overview-card small {
+      color: var(--muted);
+    }
+
+    .recent-visitors {
+      margin-top: clamp(24px, 4vw, 40px);
+      padding: clamp(18px, 3vw, 26px);
+      border-radius: 24px;
+      background: rgba(255,255,255,0.84);
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      box-shadow: 0 20px 32px rgba(15, 23, 42, 0.1);
+    }
+
+    .recent-visitors header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .recent-visitors h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(18px, 3vw, 24px);
+    }
+
+    .recent-visitors button {
+      border-radius: 14px;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      background: rgba(14, 165, 233, 0.08);
+      color: var(--accent);
+      font-weight: 600;
+      padding: 8px 14px;
+    }
+
+    .visitor-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .visitor-card {
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      background: rgba(255,255,255,0.92);
+      display: grid;
+      gap: 6px;
+    }
+
+    .visitor-card.manager {
+      background: rgba(241, 245, 249, 0.9);
+      border-style: dashed;
+    }
+
+    .visitor-card button {
+      justify-self: flex-start;
+      padding: 8px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      background: rgba(15, 23, 42, 0.05);
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .visitor-card .meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 14px;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+
+    .visitor-card .name {
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .visitor-card .host {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .guest-modal .dialog {
+      width: min(520px, 92vw);
+      max-height: min(720px, 92vh);
+    }
+
+    .guest-modal form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 24px 28px 28px;
+      overflow: auto;
+    }
+
+    .guest-modal .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .guest-modal label {
+      font-weight: 600;
+    }
+
+    .guest-modal input,
+    .guest-modal select,
+    .guest-modal textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      background: rgba(255,255,255,0.85);
+      font-size: 16px;
+    }
+
+    .guest-modal textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .guest-modal .checkbox {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+    }
+
+    .guest-modal .checkbox input {
+      width: 20px;
+      height: 20px;
+      margin-top: 4px;
+    }
+
+    .guest-modal .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .guest-modal .actions button {
+      flex: 1;
+      min-width: 140px;
+      padding: 12px 18px;
+      border-radius: 16px;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      font-weight: 600;
+    }
+
+    .guest-modal .actions .primary {
+      background: linear-gradient(140deg, #0ea5e9, #22d3ee);
+      color: #0b3d55;
+      box-shadow: 0 12px 32px rgba(14, 165, 233, 0.3);
+    }
+
+    .guest-modal .actions .secondary {
+      background: rgba(255,255,255,0.9);
+    }
+
+    .visitor-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(14, 165, 233, 0.15);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
     .manager-button {
       margin-top: auto;
       padding: 12px 16px;
@@ -551,13 +907,15 @@ Ny
     }
 
     .manager-modal,
+    .guest-modal,
     .toast-region {
       position: fixed;
       inset: 0;
       pointer-events: none;
     }
 
-    .manager-modal .backdrop {
+    .manager-modal .backdrop,
+    .guest-modal .backdrop {
       position: absolute;
       inset: 0;
       background: rgba(15, 23, 42, 0.45);
@@ -567,12 +925,14 @@ Ny
       pointer-events: none;
     }
 
-    .manager-modal.is-open .backdrop {
+    .manager-modal.is-open .backdrop,
+    .guest-modal.is-open .backdrop {
       opacity: 1;
       pointer-events: auto;
     }
 
-    .manager-modal .dialog {
+    .manager-modal .dialog,
+    .guest-modal .dialog {
       position: absolute;
       top: 50%;
       left: 50%;
@@ -591,7 +951,8 @@ Ny
       pointer-events: none;
     }
 
-    .manager-modal.is-open .dialog {
+    .manager-modal.is-open .dialog,
+    .guest-modal.is-open .dialog {
       opacity: 1;
       transform: translate(-50%, -50%) scale(1);
       pointer-events: auto;
@@ -854,11 +1215,20 @@ Ny
           <div class="action-buttons">
             <button type="button" class="secondary" id="backToScreensaver">Tilbage til infoskærm</button>
             <button type="button" id="refreshData">Synkroniser nu</button>
+            <button type="button" id="openGuestModal">Registrer gæst</button>
           </div>
           <button type="button" class="manager-button" id="openManager">Afdelingsleder adgang</button>
         </aside>
         <main>
+          <section class="overview" id="overviewStats" aria-live="polite"></section>
           <div id="peopleContainer"></div>
+          <section class="recent-visitors" id="recentVisitorsSection">
+            <header>
+              <h3>Seneste besøgende</h3>
+              <button type="button" id="openVisitorLog">Vis hele loggen</button>
+            </header>
+            <div class="visitor-list" id="recentVisitors"></div>
+          </section>
         </main>
       </div>
     </div>
@@ -908,6 +1278,10 @@ Ny
             <div class="field">
               <label for="employeePhone">Telefon (valgfrit)</label>
               <input type="text" id="employeePhone" placeholder="+45 ..." />
+            </div>
+            <div class="field">
+              <label for="employeeNotifyWebhook">Webhook til notifikation (valgfrit)</label>
+              <input type="url" id="employeeNotifyWebhook" placeholder="https://hooks.slack.com/..." />
             </div>
             <div class="field">
               <label for="employeeNotes">Noter</label>
@@ -968,6 +1342,17 @@ Ny
             </table>
           </div>
         </fieldset>
+        <fieldset data-section="manager" hidden style="grid-column:1/-1;">
+          <legend>Besøgslog &amp; evakuering</legend>
+          <p style="margin-top:0;color:var(--muted);font-size:14px;">Få overblik over gæster og generér lister til evakuering eller sikkerhedstjek.</p>
+          <div style="max-height:240px;overflow:auto;">
+            <div class="visitor-list" id="managerVisitorList"></div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:flex-end;margin-top:16px;">
+            <button type="button" id="downloadEvacuation" class="primary" style="flex:1;min-width:200px;">Evakueringsliste (CSV)</button>
+            <button type="button" id="exportVisitorCsv" style="flex:1;min-width:200px;background:rgba(15,23,42,0.06);border:1px solid rgba(15,23,42,0.15);">Eksportér besøgslog</button>
+          </div>
+        </fieldset>
       </div>
       <footer>
         <span style="color:var(--muted);font-size:13px;">Ændringer synkroniseres via Firebase Cloud Firestore.</span>
@@ -975,6 +1360,59 @@ Ny
           <button type="button" id="closeManager">Luk</button>
         </div>
       </footer>
+    </div>
+  </div>
+
+  <div class="guest-modal" id="guestModal" aria-hidden="true">
+    <div class="backdrop" data-close="true"></div>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="guestTitle">
+      <header>
+        <h3 id="guestTitle">Gæsteregistrering</h3>
+        <p>Byd gæster velkommen, udskriv badge og underret værten med det samme.</p>
+      </header>
+      <form id="guestForm">
+        <div class="field">
+          <label for="guestName">Navn på gæst *</label>
+          <input id="guestName" required placeholder="Fornavn Efternavn" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="guestCompany">Virksomhed</label>
+          <input id="guestCompany" placeholder="Firma/organisation" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="guestEmail">Email</label>
+          <input id="guestEmail" type="email" placeholder="gæst@firma.dk" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="guestPhone">Telefonnummer</label>
+          <input id="guestPhone" type="tel" placeholder="+45 12 34 56 78" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="guestHost">Hvem besøger gæsten? *</label>
+          <select id="guestHost" required></select>
+        </div>
+        <div class="field">
+          <label for="guestPurpose">Formål med besøget</label>
+          <textarea id="guestPurpose" placeholder="Eksempel: Workshop, kundemøde, levering..." rows="3"></textarea>
+        </div>
+        <div class="field">
+          <label for="guestDeparture">Forventet afgang</label>
+          <input id="guestDeparture" type="time" />
+        </div>
+        <div class="field">
+          <label for="guestVehicle">Bilregistrering</label>
+          <input id="guestVehicle" placeholder="AB12345" autocomplete="off" />
+        </div>
+        <div class="checkbox">
+          <input type="checkbox" id="guestNda" />
+          <label for="guestNda">Jeg har læst og accepteret SUBRAs gæste- og NDA-politik.</label>
+        </div>
+        <div class="actions">
+          <button type="button" class="secondary" data-close="true">Fortryd</button>
+          <button type="submit" class="primary">Registrer besøg</button>
+        </div>
+        <p style="font-size:12px;color:var(--muted);text-align:center;margin:0;">Oplysninger gemmes sikkert og deles kun med værten.</p>
+      </form>
     </div>
   </div>
 
@@ -1006,14 +1444,30 @@ Ny
     const slidesContainer = document.getElementById('slides');
     const slideTemplate = document.getElementById('slideTemplate');
     const peopleContainer = document.getElementById('peopleContainer');
+    const overviewStats = document.getElementById('overviewStats');
+    const recentVisitorsSection = document.getElementById('recentVisitorsSection');
+    const recentVisitorsList = document.getElementById('recentVisitors');
+    const openVisitorLogBtn = document.getElementById('openVisitorLog');
     const searchInput = document.getElementById('searchInput');
     const backToScreensaverBtn = document.getElementById('backToScreensaver');
     const refreshDataBtn = document.getElementById('refreshData');
     const openManagerBtn = document.getElementById('openManager');
+    const openGuestModalBtn = document.getElementById('openGuestModal');
     const managerModal = document.getElementById('managerModal');
+    const guestModal = document.getElementById('guestModal');
     const managerPinInput = document.getElementById('managerPinInput');
     const validatePinBtn = document.getElementById('validatePin');
     const pinStatus = document.getElementById('pinStatus');
+    const guestForm = document.getElementById('guestForm');
+    const guestNameInput = document.getElementById('guestName');
+    const guestCompanyInput = document.getElementById('guestCompany');
+    const guestEmailInput = document.getElementById('guestEmail');
+    const guestPhoneInput = document.getElementById('guestPhone');
+    const guestHostSelect = document.getElementById('guestHost');
+    const guestPurposeInput = document.getElementById('guestPurpose');
+    const guestDepartureInput = document.getElementById('guestDeparture');
+    const guestVehicleInput = document.getElementById('guestVehicle');
+    const guestNdaInput = document.getElementById('guestNda');
     const employeeForm = document.getElementById('employeeForm');
     const employeeIdInput = document.getElementById('employeeId');
     const employeeNameInput = document.getElementById('employeeName');
@@ -1022,6 +1476,7 @@ Ny
     const employeePhotoInput = document.getElementById('employeePhoto');
     const employeeEmailInput = document.getElementById('employeeEmail');
     const employeePhoneInput = document.getElementById('employeePhone');
+    const employeeNotifyWebhookInput = document.getElementById('employeeNotifyWebhook');
     const employeeNotesInput = document.getElementById('employeeNotes');
     const deleteEmployeeBtn = document.getElementById('deleteEmployee');
     const leaveForm = document.getElementById('leaveForm');
@@ -1032,11 +1487,14 @@ Ny
     const clearLeaveBtn = document.getElementById('clearLeave');
     const managerSections = managerModal.querySelectorAll('[data-section="manager"]');
     const employeeTableBody = document.querySelector('#employeeTable tbody');
+    const managerVisitorList = document.getElementById('managerVisitorList');
     const toastRegion = document.getElementById('toastRegion');
     const syncIndicator = document.getElementById('syncIndicator');
     const syncDot = document.getElementById('syncDot');
     const syncText = document.getElementById('syncText');
     const closeManagerBtn = document.getElementById('closeManager');
+    const downloadEvacuationBtn = document.getElementById('downloadEvacuation');
+    const exportVisitorCsvBtn = document.getElementById('exportVisitorCsv');
 
     const params = new URLSearchParams(location.search);
     const orgId = (params.get('org') || 'subra').toLowerCase();
@@ -1047,6 +1505,7 @@ Ny
     let activeSlide = 0;
     let unlocked = false;
     let unsubscribeEmployees = null;
+    let unsubscribeVisitors = null;
     let unsubscribeSlides = null;
     let pendingToast = null;
     let isSyncing = false;
@@ -1069,10 +1528,261 @@ Ny
       }
     ];
 
+    const fallbackEmployees = [
+      {
+        id: 'emp-ida',
+        name: 'Ida Sørensen',
+        department: 'Design',
+        role: 'Experience Lead',
+        photoUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=600&q=80',
+        email: 'ida@subra.dk',
+        phone: '+45 28 91 11 22',
+        status: 'in',
+        lastCheckIn: new Date(Date.now() - 75 * 60 * 1000).toISOString(),
+        lastCheckOut: null,
+        notifyWebhook: 'https://ntfy.sh/subra-demo-ida'
+      },
+      {
+        id: 'emp-jonas',
+        name: 'Jonas Lund',
+        department: 'Udvikling',
+        role: 'Lead Software Engineer',
+        photoUrl: 'https://images.unsplash.com/photo-1531891437562-4301cf35b7e4?auto=format&fit=crop&w=600&q=80',
+        email: 'jonas@subra.dk',
+        phone: '+45 22 44 66 12',
+        status: 'out',
+        lastCheckIn: new Date(Date.now() - 22 * 60 * 60 * 1000).toISOString(),
+        lastCheckOut: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+        notifyWebhook: 'https://ntfy.sh/subra-demo-jonas'
+      },
+      {
+        id: 'emp-maja',
+        name: 'Maja Kjær',
+        department: 'Salg',
+        role: 'Client Director',
+        photoUrl: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=600&q=80',
+        email: 'maja@subra.dk',
+        phone: '+45 40 88 32 91',
+        status: 'in',
+        lastCheckIn: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        lastCheckOut: null,
+        notifyWebhook: 'https://ntfy.sh/subra-demo-maja'
+      },
+      {
+        id: 'emp-emil',
+        name: 'Emil Andreasen',
+        department: 'Support',
+        role: 'CX Specialist',
+        photoUrl: 'https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=600&q=80',
+        email: 'emil@subra.dk',
+        phone: '+45 33 92 55 08',
+        status: 'out',
+        lastCheckIn: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+        lastCheckOut: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+        notifyWebhook: 'https://ntfy.sh/subra-demo-emil',
+        leave: {
+          type: 'sick',
+          start: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+          end: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+        }
+      },
+      {
+        id: 'emp-liva',
+        name: 'Liva Madsen',
+        department: 'Ledelse',
+        role: 'COO',
+        photoUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=600&q=80',
+        email: 'liva@subra.dk',
+        phone: '+45 26 40 44 00',
+        status: 'out',
+        lastCheckIn: null,
+        lastCheckOut: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+        notifyWebhook: 'https://ntfy.sh/subra-demo-liva'
+      }
+    ];
+
+    const fallbackVisitors = [
+      {
+        id: 'visit-1',
+        name: 'Martin Holm',
+        company: 'Nordwind A/S',
+        hostId: 'emp-jonas',
+        hostName: 'Jonas Lund',
+        hostDepartment: 'Udvikling',
+        phone: '+45 20 88 10 55',
+        email: 'martin@nordwind.dk',
+        purpose: 'Workshop om integrationsplatform',
+        checkedInAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        checkedOutAt: null,
+        expectedDeparture: '15:00',
+        ndaAccepted: true,
+        vehicle: 'CT45876',
+        status: 'in'
+      },
+      {
+        id: 'visit-2',
+        name: 'Camilla Kragh',
+        company: 'Arctic Foods',
+        hostId: 'emp-maja',
+        hostName: 'Maja Kjær',
+        hostDepartment: 'Salg',
+        phone: '+45 61 44 90 30',
+        email: 'ck@arcticfoods.dk',
+        purpose: 'Kontraktsignering',
+        checkedInAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+        checkedOutAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+        expectedDeparture: '11:30',
+        ndaAccepted: true,
+        vehicle: null,
+        status: 'out'
+      }
+    ];
+
+    const STORAGE_KEY = 'subra-kiosk-state-v2';
+    const supportsStorage = (() => {
+      try {
+        const key = '__storage_test__';
+        localStorage.setItem(key, '1');
+        localStorage.removeItem(key);
+        return true;
+      } catch (error) {
+        console.warn('Local storage ikke tilgængelig', error);
+        return false;
+      }
+    })();
+
     const state = {
       employees: new Map(),
       slides: defaultSlides,
+      visitors: [],
     };
+
+    function toDate(value) {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      if (typeof value === 'string') {
+        const parsed = new Date(value);
+        return isNaN(parsed) ? null : parsed;
+      }
+      if (typeof value === 'number') return new Date(value);
+      if (value.toDate) return value.toDate();
+      if (typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+      return null;
+    }
+
+    function toIso(value) {
+      const date = toDate(value);
+      return date ? date.toISOString() : null;
+    }
+
+    function normaliseLeave(raw) {
+      if (!raw) return null;
+      return {
+        type: raw.type || 'leave',
+        start: toDate(raw.start),
+        end: toDate(raw.end),
+      };
+    }
+
+    function normaliseEmployee(raw) {
+      if (!raw) return null;
+      const id = raw.id || raw.uid || `emp-${Math.random().toString(16).slice(2)}`;
+      return {
+        id,
+        name: raw.name || 'Ukendt medarbejder',
+        department: raw.department || 'Andet',
+        role: raw.role || '',
+        photoUrl: raw.photoUrl || raw.avatar || '',
+        email: raw.email || '',
+        phone: raw.phone || raw.mobile || '',
+        notes: raw.notes || '',
+        status: raw.status === 'in' ? 'in' : 'out',
+        lastCheckIn: toDate(raw.lastCheckIn),
+        lastCheckOut: toDate(raw.lastCheckOut),
+        updatedAt: toDate(raw.updatedAt) || new Date(),
+        leave: normaliseLeave(raw.leave),
+        notifyWebhook: raw.notifyWebhook || raw.notificationWebhook || '',
+      };
+    }
+
+    function normaliseVisitor(raw) {
+      if (!raw) return null;
+      const id = raw.id || raw.uid || `visit-${Math.random().toString(16).slice(2)}`;
+      return {
+        id,
+        name: raw.name || 'Ukendt gæst',
+        company: raw.company || '',
+        hostId: raw.hostId || '',
+        hostName: raw.hostName || '',
+        hostDepartment: raw.hostDepartment || '',
+        phone: raw.phone || '',
+        email: raw.email || '',
+        purpose: raw.purpose || '',
+        checkedInAt: toDate(raw.checkedInAt) || toDate(raw.createdAt) || new Date(),
+        checkedOutAt: toDate(raw.checkedOutAt),
+        expectedDeparture: raw.expectedDeparture || '',
+        vehicle: raw.vehicle || '',
+        ndaAccepted: Boolean(raw.ndaAccepted),
+        status: raw.status === 'out' ? 'out' : raw.checkedOutAt ? 'out' : 'in',
+        badge: raw.badge || raw.badgeNumber || '',
+        createdAt: toDate(raw.createdAt) || new Date(),
+      };
+    }
+
+    function loadLocalState() {
+      const base = {
+        employees: fallbackEmployees,
+        visitors: fallbackVisitors,
+      };
+      if (!supportsStorage) return base;
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (!stored) return base;
+        const parsed = JSON.parse(stored);
+        return {
+          employees: Array.isArray(parsed.employees) && parsed.employees.length ? parsed.employees : fallbackEmployees,
+          visitors: Array.isArray(parsed.visitors) ? parsed.visitors : fallbackVisitors,
+        };
+      } catch (error) {
+        console.warn('Kunne ikke læse lokal data', error);
+        return base;
+      }
+    }
+
+    function persistLocalState() {
+      if (!supportsStorage) return;
+      const payload = {
+        employees: [...state.employees.values()].map((employee) => ({
+          ...employee,
+          lastCheckIn: toIso(employee.lastCheckIn),
+          lastCheckOut: toIso(employee.lastCheckOut),
+          leave: employee.leave ? {
+            ...employee.leave,
+            start: toIso(employee.leave.start),
+            end: toIso(employee.leave.end),
+          } : null,
+          updatedAt: toIso(employee.updatedAt),
+        })),
+        visitors: state.visitors.map((visitor) => ({
+          ...visitor,
+          checkedInAt: toIso(visitor.checkedInAt),
+          checkedOutAt: toIso(visitor.checkedOutAt),
+          createdAt: toIso(visitor.createdAt),
+        })),
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch (error) {
+        console.warn('Kunne ikke gemme lokal data', error);
+      }
+    }
+
+    function hydrateFromLocal() {
+      const local = loadLocalState();
+      const employees = local.employees.map(normaliseEmployee).filter(Boolean);
+      state.employees = new Map(employees.map((employee) => [employee.id, employee]));
+      state.visitors = local.visitors.map(normaliseVisitor).filter(Boolean);
+    }
 
     function formatDate(ts) {
       if (!ts) return '—';
@@ -1085,6 +1795,14 @@ Ny
       const date = ts instanceof Date ? ts : ts.toDate ? ts.toDate() : new Date(ts);
       const time = date.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
       return `${date.toLocaleDateString('da-DK')} kl. ${time}`;
+    }
+
+    function formatTimeValue(value) {
+      if (!value) return '—';
+      if (typeof value === 'string' && /^\d{2}:\d{2}$/.test(value)) return value;
+      const date = toDate(value);
+      if (!date) return '—';
+      return date.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
     }
 
     function initials(name) {
@@ -1238,6 +1956,8 @@ Ny
       });
       peopleContainer.innerHTML = '';
       peopleContainer.appendChild(fragment);
+      populateGuestHosts();
+      renderOverview();
     }
 
     function leaveLabel(leave) {
@@ -1266,6 +1986,13 @@ Ny
       if (start && today < start) return false;
       if (end && today > end) return false;
       return true;
+    }
+
+    function isToday(date) {
+      const value = toDate(date);
+      if (!value) return false;
+      const today = new Date();
+      return value.getDate() === today.getDate() && value.getMonth() === today.getMonth() && value.getFullYear() === today.getFullYear();
     }
 
     function showApp() {
@@ -1307,6 +2034,14 @@ Ny
       renderEmployees();
       resetInactivityTimer();
     });
+    openGuestModalBtn.addEventListener('click', () => {
+      openGuestModal();
+      resetInactivityTimer();
+    });
+    openVisitorLogBtn.addEventListener('click', () => {
+      openManagerModal();
+      toast('Indtast PIN for at se hele besøgsloggen.');
+    });
 
     function openManagerModal() {
       managerModal.classList.add('is-open');
@@ -1323,12 +2058,36 @@ Ny
       pinStatus.textContent = 'Del PIN-koden sikkert med ansvarlige ledere.';
     }
 
+    function openGuestModal() {
+      guestModal.classList.add('is-open');
+      guestModal.setAttribute('aria-hidden', 'false');
+      populateGuestHosts();
+      setTimeout(() => guestNameInput.focus(), 50);
+    }
+
+    function closeGuestModal() {
+      guestModal.classList.remove('is-open');
+      guestModal.setAttribute('aria-hidden', 'true');
+      guestForm.reset();
+      populateGuestHosts();
+    }
+
     openManagerBtn.addEventListener('click', () => {
       openManagerModal();
       resetInactivityTimer();
     });
     managerModal.querySelector('.backdrop').addEventListener('click', closeManagerModal);
     closeManagerBtn.addEventListener('click', closeManagerModal);
+    guestModal.addEventListener('click', (event) => {
+      if (event.target.dataset.close === 'true') {
+        closeGuestModal();
+      }
+    });
+    guestModal.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeGuestModal();
+      }
+    });
     managerPinInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
@@ -1375,6 +2134,8 @@ Ny
         row.querySelector('[data-action="edit"]').addEventListener('click', () => populateEmployeeForm(employee));
         employeeTableBody.appendChild(row);
       });
+      renderManagerVisitorList();
+      populateGuestHosts();
     }
 
     function populateEmployeeForm(employee) {
@@ -1385,6 +2146,7 @@ Ny
       employeePhotoInput.value = employee.photoUrl || '';
       employeeEmailInput.value = employee.email || '';
       employeePhoneInput.value = employee.phone || '';
+      employeeNotifyWebhookInput.value = employee.notifyWebhook || '';
       employeeNotesInput.value = employee.notes || '';
     }
 
@@ -1392,6 +2154,79 @@ Ny
       employeeForm.reset();
       employeeIdInput.value = '';
     }
+
+    guestForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const name = guestNameInput.value.trim();
+      if (!name) {
+        toast('Angiv gæstens navn.');
+        return;
+      }
+      if (!guestHostSelect.value) {
+        toast('Vælg den medarbejder gæsten besøger.');
+        return;
+      }
+      const host = state.employees.get(guestHostSelect.value);
+      if (!host) {
+        toast('Vælg en gyldig vært.');
+        return;
+      }
+      const now = new Date();
+      const visitor = normaliseVisitor({
+        id: `visit-${Date.now()}`,
+        name,
+        company: guestCompanyInput.value.trim(),
+        phone: guestPhoneInput.value.trim(),
+        email: guestEmailInput.value.trim(),
+        purpose: guestPurposeInput.value.trim(),
+        hostId: host.id,
+        hostName: host.name,
+        hostDepartment: host.department,
+        expectedDeparture: guestDepartureInput.value,
+        vehicle: guestVehicleInput.value.trim(),
+        ndaAccepted: guestNdaInput.checked,
+        status: 'in',
+        checkedInAt: now,
+        createdAt: now,
+      });
+      state.visitors = [visitor, ...state.visitors];
+      renderVisitors();
+      persistLocalState();
+      try {
+        setSyncState('syncing');
+        if (window.db) {
+          const docRef = window.db.collection('companies').doc(orgId).collection('visitors').doc();
+          await docRef.set({
+            name: visitor.name,
+            company: visitor.company,
+            phone: visitor.phone,
+            email: visitor.email,
+            purpose: visitor.purpose,
+            hostId: visitor.hostId,
+            hostName: visitor.hostName,
+            hostDepartment: visitor.hostDepartment,
+            expectedDeparture: visitor.expectedDeparture || null,
+            vehicle: visitor.vehicle || null,
+            ndaAccepted: visitor.ndaAccepted,
+            status: 'in',
+            checkedInAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+          });
+          visitor.id = docRef.id;
+          persistLocalState();
+          setSyncState('online');
+        } else {
+          setSyncState('offline');
+        }
+        await notifyHost(host, visitor);
+        toast('Gæsten er registreret. Værten er informeret.');
+        closeGuestModal();
+      } catch (error) {
+        console.error(error);
+        toast('Kunne ikke registrere gæsten.');
+        setSyncState('error');
+      }
+    });
 
     employeeForm.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -1403,6 +2238,7 @@ Ny
         photoUrl: employeePhotoInput.value.trim(),
         email: employeeEmailInput.value.trim(),
         phone: employeePhoneInput.value.trim(),
+        notifyWebhook: employeeNotifyWebhookInput.value.trim(),
         notes: employeeNotesInput.value.trim(),
         updatedAt: new Date(),
       };
@@ -1486,8 +2322,89 @@ Ny
       attachRealtime();
     });
 
+    if (downloadEvacuationBtn) {
+      downloadEvacuationBtn.addEventListener('click', () => {
+        const rows = [[
+          'Navn',
+          'Type',
+          'Afdeling/Vært',
+          'Telefon',
+          'Senest registreret'
+        ]];
+        const presentEmployees = getPresentEmployees();
+        presentEmployees.forEach((employee) => {
+          rows.push([
+            employee.name,
+            'Medarbejder',
+            employee.department,
+            employee.phone || '',
+            formatDateTime(employee.lastCheckIn || employee.updatedAt)
+          ]);
+        });
+        const activeVisitors = getVisitorsInHouse();
+        activeVisitors.forEach((visitor) => {
+          rows.push([
+            visitor.name,
+            'Gæst',
+            visitor.hostName ? `${visitor.hostName} (${visitor.hostDepartment})` : '',
+            visitor.phone || '',
+            formatDateTime(visitor.checkedInAt)
+          ]);
+        });
+        if (rows.length === 1) {
+          toast('Ingen personer registreret i huset lige nu.');
+          return;
+        }
+        const filename = `subra-evakuering-${new Date().toISOString().slice(0, 10)}.csv`;
+        downloadCsv(filename, rows);
+        toast('Evakueringsliste downloadet.');
+      });
+    }
+
+    if (exportVisitorCsvBtn) {
+      exportVisitorCsvBtn.addEventListener('click', () => {
+        const rows = [[
+          'Navn',
+          'Virksomhed',
+          'Vært',
+          'Indtjekket',
+          'Udtjekket',
+          'Telefon',
+          'Email',
+          'Formål',
+          'Status'
+        ]];
+        if (!state.visitors.length) {
+          toast('Ingen besøgende registreret endnu.');
+          return;
+        }
+        const visitors = [...state.visitors].sort((a, b) => {
+          const aDate = toDate(a.checkedInAt)?.getTime() || 0;
+          const bDate = toDate(b.checkedInAt)?.getTime() || 0;
+          return bDate - aDate;
+        });
+        visitors.forEach((visitor) => {
+          rows.push([
+            visitor.name,
+            visitor.company || '',
+            visitor.hostName || '',
+            formatDateTime(visitor.checkedInAt),
+            visitor.checkedOutAt ? formatDateTime(visitor.checkedOutAt) : '',
+            visitor.phone || '',
+            visitor.email || '',
+            visitor.purpose || '',
+            visitor.status === 'out' || visitor.checkedOutAt ? 'Udtjekket' : 'Til stede'
+          ]);
+        });
+        const filename = `subra-besogslog-${new Date().toISOString().slice(0, 10)}.csv`;
+        downloadCsv(filename, rows);
+        toast('Besøgsloggen er downloadet.');
+      });
+    }
+
     function detachRealtime() {
       if (unsubscribeEmployees) unsubscribeEmployees();
+      if (unsubscribeVisitors) unsubscribeVisitors();
       if (unsubscribeSlides) unsubscribeSlides();
     }
 
@@ -1499,34 +2416,25 @@ Ny
       setSyncState('syncing');
       unsubscribeEmployees = window.db.collection('companies').doc(orgId).collection('employees').onSnapshot((snapshot) => {
         setSyncState('online');
-        snapshot.docChanges().forEach((change) => {
-          const data = change.doc.data();
-          const employee = {
-            id: change.doc.id,
-            name: data.name || 'Ukendt',
-            department: data.department || 'Andet',
-            role: data.role || '',
-            photoUrl: data.photoUrl || '',
-            email: data.email || '',
-            phone: data.phone || '',
-            notes: data.notes || '',
-            status: data.status || 'out',
-            lastCheckIn: data.lastCheckIn,
-            lastCheckOut: data.lastCheckOut,
-            leave: data.leave || null,
-          };
-          if (change.type === 'removed') {
-            state.employees.delete(employee.id);
-          } else {
-            state.employees.set(employee.id, employee);
-          }
-        });
+        const employees = snapshot.docs.map((doc) => normaliseEmployee({ id: doc.id, ...doc.data() })).filter(Boolean);
+        state.employees = new Map(employees.map((employee) => [employee.id, employee]));
         renderEmployees();
         if (unlocked) refreshManagerLists();
+        persistLocalState();
       }, (error) => {
         console.error(error);
         setSyncState('error');
         toast('Realtime-synk fejlede.');
+      });
+
+      unsubscribeVisitors = window.db.collection('companies').doc(orgId).collection('visitors').orderBy('checkedInAt', 'desc').limit(200).onSnapshot((snapshot) => {
+        const visitors = snapshot.docs.map((doc) => normaliseVisitor({ id: doc.id, ...doc.data() })).filter(Boolean);
+        state.visitors = visitors;
+        renderVisitors();
+        if (unlocked) refreshManagerLists();
+        persistLocalState();
+      }, (error) => {
+        console.error(error);
       });
 
       unsubscribeSlides = window.db.collection('companies').doc(orgId).collection('slides').onSnapshot((snapshot) => {
@@ -1545,21 +2453,38 @@ Ny
     }
 
     async function updateAttendance(id, action) {
+      const employee = state.employees.get(id);
+      if (!employee) {
+        toast('Medarbejderen blev ikke fundet.');
+        return;
+      }
+      const now = new Date();
+      const next = { ...employee, status: action === 'in' ? 'in' : 'out', updatedAt: now };
+      if (action === 'in') {
+        next.lastCheckIn = now;
+      } else {
+        next.lastCheckOut = now;
+      }
+      state.employees.set(id, next);
+      renderEmployees();
+      persistLocalState();
       try {
         setSyncState('syncing');
-        if (!window.db) throw new Error('Database ikke forbundet');
-        const now = window.firebase.firestore.FieldValue.serverTimestamp();
-        const updates = {
-          status: action === 'in' ? 'in' : 'out',
-          updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-        };
-        if (action === 'in') {
-          updates.lastCheckIn = now;
+        if (window.db) {
+          const updates = {
+            status: action === 'in' ? 'in' : 'out',
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+          };
+          if (action === 'in') {
+            updates.lastCheckIn = window.firebase.firestore.FieldValue.serverTimestamp();
+          } else {
+            updates.lastCheckOut = window.firebase.firestore.FieldValue.serverTimestamp();
+          }
+          await window.db.collection('companies').doc(orgId).collection('employees').doc(id).set(updates, { merge: true });
+          setSyncState('online');
         } else {
-          updates.lastCheckOut = now;
+          setSyncState('offline');
         }
-        await window.db.collection('companies').doc(orgId).collection('employees').doc(id).set(updates, { merge: true });
-        setSyncState('online');
         toast(action === 'in' ? 'Velkommen! Du er tjekket ind.' : 'Farvel! Du er tjekket ud.');
       } catch (error) {
         console.error(error);
@@ -1569,27 +2494,73 @@ Ny
     }
 
     async function createEmployee(payload) {
-      if (!window.db) throw new Error('Database ikke forbundet');
-      const docRef = window.db.collection('companies').doc(orgId).collection('employees').doc();
-      await docRef.set({
-        ...payload,
-        status: 'out',
-        createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-      });
+      const now = new Date();
+      try {
+        if (window.db) {
+          const docRef = window.db.collection('companies').doc(orgId).collection('employees').doc();
+          const employee = normaliseEmployee({ id: docRef.id, ...payload, status: 'out', updatedAt: now });
+          state.employees.set(employee.id, employee);
+          renderEmployees();
+          persistLocalState();
+          await docRef.set({
+            ...payload,
+            status: 'out',
+            createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+          });
+        } else {
+          const employee = normaliseEmployee({ id: `emp-${Date.now()}`, ...payload, status: 'out', updatedAt: now });
+          state.employees.set(employee.id, employee);
+          renderEmployees();
+          persistLocalState();
+          setSyncState('offline');
+        }
+      } catch (error) {
+        console.error(error);
+        toast('Kunne ikke oprette medarbejderen.');
+        setSyncState('error');
+      }
     }
 
     async function saveEmployee(id, payload) {
-      if (!window.db) throw new Error('Database ikke forbundet');
-      await window.db.collection('companies').doc(orgId).collection('employees').doc(id).set(payload, { merge: true });
+      const existing = state.employees.get(id);
+      const merged = normaliseEmployee({ ...existing, ...payload, id });
+      state.employees.set(id, merged);
+      renderEmployees();
+      persistLocalState();
+      if (!window.db) {
+        setSyncState('offline');
+        return;
+      }
+      await window.db.collection('companies').doc(orgId).collection('employees').doc(id).set({
+        ...payload,
+        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
     }
 
     async function deleteEmployee(id) {
-      if (!window.db) throw new Error('Database ikke forbundet');
+      state.employees.delete(id);
+      renderEmployees();
+      persistLocalState();
+      if (!window.db) {
+        setSyncState('offline');
+        return;
+      }
       await window.db.collection('companies').doc(orgId).collection('employees').doc(id).delete();
     }
 
     async function updateLeave(id, leave) {
-      if (!window.db) throw new Error('Database ikke forbundet');
+      const employee = state.employees.get(id);
+      if (employee) {
+        employee.leave = leave ? normaliseLeave(leave) : null;
+        state.employees.set(id, employee);
+        renderEmployees();
+        persistLocalState();
+      }
+      if (!window.db) {
+        setSyncState('offline');
+        return;
+      }
       await window.db.collection('companies').doc(orgId).collection('employees').doc(id).set({
         leave: leave ? {
           type: leave.type,
@@ -1597,6 +2568,95 @@ Ny
           end: leave.end ? window.firebase.firestore.Timestamp.fromDate(leave.end) : null,
         } : null
       }, { merge: true });
+    }
+
+    async function notifyHost(host, visitor) {
+      const message = `${visitor.name}${visitor.company ? ` fra ${visitor.company}` : ''} er ankommet og venter i receptionen.`;
+      try {
+        if (window.db) {
+          await window.db.collection('companies').doc(orgId).collection('notifications').add({
+            type: 'visitor-arrival',
+            hostId: host.id,
+            hostName: host.name,
+            hostEmail: host.email || null,
+            hostPhone: host.phone || null,
+            visitorName: visitor.name,
+            visitorCompany: visitor.company || null,
+            visitorPhone: visitor.phone || null,
+            message,
+            status: 'pending',
+            createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (error) {
+        console.warn('Kunne ikke sende intern notifikation', error);
+      }
+      if (host.notifyWebhook) {
+        try {
+          await fetch(host.notifyWebhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: message,
+          });
+        } catch (error) {
+          console.warn('Webhook notifikation fejlede', error);
+        }
+      }
+    }
+
+    async function checkoutVisitor(id) {
+      const index = state.visitors.findIndex((visitor) => visitor.id === id);
+      if (index === -1) return;
+      const now = new Date();
+      state.visitors[index] = { ...state.visitors[index], status: 'out', checkedOutAt: now };
+      renderVisitors();
+      persistLocalState();
+      try {
+        setSyncState('syncing');
+        if (window.db) {
+          await window.db.collection('companies').doc(orgId).collection('visitors').doc(id).set({
+            status: 'out',
+            checkedOutAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+          setSyncState('online');
+        } else {
+          setSyncState('offline');
+        }
+        toast('Gæsten er tjekket ud.');
+      } catch (error) {
+        console.error(error);
+        toast('Kunne ikke tjekke gæsten ud.');
+        setSyncState('error');
+      }
+    }
+
+    function escapeCsvValue(value) {
+      const text = value === undefined || value === null ? '' : String(value);
+      if (/[";\n]/.test(text)) {
+        return `"${text.replace(/"/g, '""')}"`;
+      }
+      return text;
+    }
+
+    function downloadCsv(filename, rows) {
+      const csv = rows.map((row) => row.map(escapeCsvValue).join(';')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    function getPresentEmployees() {
+      return [...state.employees.values()].filter((employee) => employee.status === 'in' && !(employee.leave && isOnLeave(employee.leave)));
+    }
+
+    function getVisitorsInHouse() {
+      return state.visitors.filter((visitor) => visitor.status !== 'out' && !visitor.checkedOutAt);
     }
 
     function initClock() {
@@ -1652,9 +2712,11 @@ Ny
     }
 
     function init() {
+      hydrateFromLocal();
+      renderEmployees();
+      renderVisitors();
       initClock();
       initSlides();
-      renderEmployees();
       initFirebase();
       registerServiceWorker();
       showScreensaver();
