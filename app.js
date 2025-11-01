@@ -1,5 +1,8 @@
-const STORAGE_KEY = 'subra-kiosk-state-v2';
 const INACTIVITY_TIMEOUT = 60000; // 60 sekunder før pauseskærm
+const FIREBASE_CONFIG = window.SUBRA_FIREBASE_CONFIG || null;
+const FIREBASE_COLLECTION = window.SUBRA_KIOSK_COLLECTION || 'kiosks';
+const FIREBASE_DOCUMENT = window.SUBRA_KIOSK_DOCUMENT || 'subra-main';
+const FIREBASE_ASSET_FOLDER = window.SUBRA_ASSET_FOLDER || 'screensaver';
 
 const seedEmployees = [
   {
@@ -169,7 +172,7 @@ const SLIDE_THEMES = [
   { value: 'forest', label: 'Forest · nordisk grøn' },
 ];
 
-let state = loadState();
+let state = ensureStateDefaults();
 let inactivityTimer;
 let activeModalEmployee = null;
 let activePolicyEmployee = null;
@@ -178,7 +181,11 @@ let screensaverInterval;
 let pendingSlideUploadId = null;
 let firebaseApp = null;
 let firebaseServices = { storage: null, firestore: null };
-let firebaseSlideUnsubscribe = null;
+let kioskDocRef = null;
+let unsubscribeState = null;
+let isCloudReady = false;
+let isApplyingRemoteState = false;
+let hasCloudWarning = false;
 
 const elements = {
   screensaver: document.getElementById('screensaver'),
@@ -226,15 +233,6 @@ const elements = {
   screensaverAdmin: document.getElementById('screensaver-admin'),
   addSlide: document.getElementById('add-slide'),
   slideUpload: document.getElementById('slide-upload'),
-  useFirebaseSlides: document.getElementById('use-firebase-slides'),
-  firebaseForm: document.getElementById('firebase-form'),
-  firebaseApiKey: document.getElementById('firebase-api-key'),
-  firebaseAuthDomain: document.getElementById('firebase-auth-domain'),
-  firebaseProjectId: document.getElementById('firebase-project-id'),
-  firebaseStorageBucket: document.getElementById('firebase-storage-bucket'),
-  firebaseMessagingSender: document.getElementById('firebase-messaging-sender'),
-  firebaseAppId: document.getElementById('firebase-app-id'),
-  clearFirebase: document.getElementById('clear-firebase'),
   qrForm: document.getElementById('qr-form'),
   qrEmployee: document.getElementById('qr-employee'),
   qrGuest: document.getElementById('qr-guest'),
@@ -248,9 +246,9 @@ init();
 
 async function init() {
   attachEvents();
-  await initializeFirebaseIfConfigured();
   renderSlides();
   renderAll();
+  await initializeFirebase();
   restartScreensaverCycle();
   tickClock();
   setInterval(tickClock, 1000);
@@ -268,9 +266,10 @@ function ensureStateDefaults(data = {}) {
   };
 
   const settings = {
-    firebase: {
-      config: data.settings?.firebase?.config || null,
-      useSlidesStorage: Boolean(data.settings?.firebase?.useSlidesStorage),
+    kiosk: {
+      collection: data.settings?.kiosk?.collection || FIREBASE_COLLECTION,
+      document: data.settings?.kiosk?.document || FIREBASE_DOCUMENT,
+      lastSynced: data.settings?.kiosk?.lastSynced || null,
     },
   };
 
@@ -284,6 +283,7 @@ function ensureStateDefaults(data = {}) {
     },
     qrLinks,
     settings,
+    updatedAt: data.updatedAt || null,
   };
 }
 
@@ -313,27 +313,56 @@ function escapeHtml(value = '') {
     .replace(/'/g, '&#39;');
 }
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return ensureStateDefaults(parsed);
-    }
-  } catch (error) {
-    console.warn('Kunne ikke indlæse gemte data', error);
-  }
-
-  return ensureStateDefaults();
+function serializeForFirestore(data) {
+  return JSON.parse(
+    JSON.stringify(data, (key, value) => {
+      if (value === undefined) return null;
+      return value;
+    })
+  );
 }
 
-function saveState() {
-  try {
-    state = ensureStateDefaults(state);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (error) {
-    console.warn('Kunne ikke gemme data', error);
+function cloneState(source = state) {
+  return JSON.parse(JSON.stringify(source));
+}
+
+function commitState(nextState) {
+  state = ensureStateDefaults(nextState || state);
+
+  if (!kioskDocRef || !firebaseServices.firestore) {
+    if (!hasCloudWarning) {
+      appendSyncOutput('Sky-synkronisering er ikke initialiseret. Tjek Firebase-konfigurationen.');
+      hasCloudWarning = true;
+    }
+    return;
   }
+
+  if (!isCloudReady) {
+    if (!hasCloudWarning) {
+      appendSyncOutput('Venter på forbindelse til skyen. Ændringer sendes, så snart forbindelsen er klar.');
+      hasCloudWarning = true;
+    }
+    return;
+  }
+
+  const snapshot = ensureStateDefaults(state);
+  snapshot.updatedAt = new Date().toISOString();
+  snapshot.settings.kiosk = {
+    collection: FIREBASE_COLLECTION,
+    document: FIREBASE_DOCUMENT,
+    lastSynced: snapshot.updatedAt,
+  };
+  state = snapshot;
+  void kioskDocRef
+    .set(serializeForFirestore(snapshot), { merge: false })
+    .then(() => {
+      hasCloudWarning = false;
+      appendSyncOutput('Skyen er opdateret.');
+    })
+    .catch((error) => {
+      console.error('Kunne ikke gemme state i skyen', error);
+      appendSyncOutput('Kunne ikke gemme til skyen. Kontrollér Firebase-forbindelsen.');
+    });
 }
 
 function attachEvents() {
@@ -380,9 +409,6 @@ function attachEvents() {
   elements.screensaverAdmin?.addEventListener('click', handleSlideAdminClick);
   elements.addSlide?.addEventListener('click', handleAddSlide);
   elements.slideUpload?.addEventListener('change', handleSlideUploadChange);
-  elements.useFirebaseSlides?.addEventListener('change', handleFirebaseSlideToggle);
-  elements.firebaseForm?.addEventListener('submit', handleFirebaseSubmit);
-  elements.clearFirebase?.addEventListener('click', handleFirebaseClear);
   elements.qrForm?.addEventListener('submit', handleQrSubmit);
 }
 
@@ -448,9 +474,7 @@ function renderAll() {
   renderGuestLog();
   renderEmployeeAdminList();
   renderScreensaverAdmin();
-  renderFirebaseSettings();
   updateQrCodes();
-  saveState();
 }
 
 function renderDepartments(filter = '') {
@@ -683,6 +707,7 @@ function handlePolicySubmit(event) {
 
   const action = pendingPolicyAction;
   closePolicyModal();
+  commitState();
   action();
 }
 
@@ -705,6 +730,7 @@ function updateEmployeeStatus(id, status, note = '') {
   });
 
   renderAll();
+  commitState();
 }
 
 function openStatusModal(employee) {
@@ -750,6 +776,7 @@ function handleStatusSubmit(event) {
   });
 
   renderAll();
+  commitState();
   closeModal();
 }
 
@@ -813,6 +840,7 @@ function handleGuestSubmit(event) {
   notifyHost(guest);
   form.reset();
   renderAll();
+  commitState();
 }
 
 function renderGuestLog() {
@@ -889,6 +917,7 @@ function handleEmployeeSubmit(event) {
   elements.employeeForm.reset();
   elements.employeeId.value = '';
   renderAll();
+  commitState();
 }
 
 function renderEmployeeAdminList() {
@@ -976,25 +1005,6 @@ function renderScreensaverAdmin() {
       .join('');
   }
 
-  if (elements.useFirebaseSlides) {
-    elements.useFirebaseSlides.checked = Boolean(state.settings?.firebase?.useSlidesStorage);
-    elements.useFirebaseSlides.disabled = !state.settings?.firebase?.config?.apiKey;
-  }
-}
-
-function renderFirebaseSettings() {
-  if (!elements.firebaseForm) return;
-  const config = state.settings?.firebase?.config || {};
-  if (elements.firebaseApiKey) elements.firebaseApiKey.value = config.apiKey || '';
-  if (elements.firebaseAuthDomain) elements.firebaseAuthDomain.value = config.authDomain || '';
-  if (elements.firebaseProjectId) elements.firebaseProjectId.value = config.projectId || '';
-  if (elements.firebaseStorageBucket) elements.firebaseStorageBucket.value = config.storageBucket || '';
-  if (elements.firebaseMessagingSender) elements.firebaseMessagingSender.value = config.messagingSenderId || '';
-  if (elements.firebaseAppId) elements.firebaseAppId.value = config.appId || '';
-  if (elements.useFirebaseSlides) {
-    elements.useFirebaseSlides.checked = Boolean(state.settings?.firebase?.useSlidesStorage);
-    elements.useFirebaseSlides.disabled = !config.apiKey;
-  }
 }
 
 function updateQrCodes() {
@@ -1056,8 +1066,7 @@ function handleSlideFieldChange(event) {
   if (field === 'headline' || field === 'description' || field === 'theme') {
     renderSlides();
   }
-  saveState();
-  void persistSlide(slide);
+  commitState();
 }
 
 function handleSlideAdminClick(event) {
@@ -1104,8 +1113,7 @@ function handleAddSlide() {
   slides.push(slide);
   renderSlides();
   renderScreensaverAdmin();
-  saveState();
-  void persistSlide(slide);
+  commitState();
   appendSyncOutput('Tilføjede et nyt slide til pauseskærmen.');
 }
 
@@ -1120,12 +1128,11 @@ function reorderSlide(slideId, delta) {
   slides.splice(newIndex, 0, moved);
   slides.forEach((slide, idx) => {
     slide.order = idx;
-    void persistSlide(slide);
   });
 
   renderSlides();
   renderScreensaverAdmin();
-  saveState();
+  commitState();
 }
 
 async function handleSlideUploadChange(event) {
@@ -1141,27 +1148,28 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    let uploadResult;
-    if (shouldUseFirebaseSlides()) {
-      uploadResult = await uploadSlideToFirebase(file, slide);
-    } else {
-      const dataUrl = await readFileAsDataUrl(file);
-      uploadResult = { url: dataUrl, path: null };
+    if (!firebaseServices.storage) {
+      throw new Error('Firebase Storage er ikke initialiseret.');
     }
 
-    if (uploadResult?.path && slide.storagePath && uploadResult.path !== slide.storagePath) {
-      await deleteFirebaseAsset(slide.storagePath);
+    const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
+    const path = `${FIREBASE_ASSET_FOLDER}/screensaver/${slide.id}-${Date.now()}-${safeName}`;
+    const storageRef = firebaseServices.storage.ref(path);
+    await storageRef.put(file);
+    const url = await storageRef.getDownloadURL();
+
+    if (slide.storagePath && slide.storagePath !== path) {
+      await deleteStorageAsset(slide.storagePath);
     }
 
-    slide.image = uploadResult.url;
-    slide.storagePath = uploadResult.path;
+    slide.image = url;
+    slide.storagePath = path;
     slide.updatedAt = new Date().toISOString();
 
     renderSlides();
     renderScreensaverAdmin();
-    saveState();
-    appendSyncOutput('Opdaterede pauseskærmsbilledet.');
-    await persistSlide(slide);
+    commitState();
+    appendSyncOutput('Opdaterede pauseskærmsbilledet via Firebase Storage.');
   } catch (error) {
     console.error('Fejl ved upload af slide', error);
     appendSyncOutput(`Kunne ikke uploade billede: ${error.message}`);
@@ -1179,229 +1187,99 @@ async function deleteSlide(slideId) {
 
   renderSlides();
   renderScreensaverAdmin();
-  saveState();
+  commitState();
   appendSyncOutput('Fjernede slide fra pauseskærmen.');
 
-  if (shouldUseFirebaseSlides()) {
-    try {
-      await firebaseServices.firestore
-        .collection('screensaverSlides')
-        .doc(slideId)
-        .delete();
-      if (removed?.storagePath) {
-        await deleteFirebaseAsset(removed.storagePath);
-      }
-    } catch (error) {
-      console.warn('Kunne ikke fjerne slide fra Firebase', error);
-    }
+  if (removed?.storagePath) {
+    await deleteStorageAsset(removed.storagePath);
   }
 }
 
-async function persistSlide(slide) {
-  if (!shouldUseFirebaseSlides()) return;
-  try {
-    const docRef = firebaseServices.firestore
-      .collection('screensaverSlides')
-      .doc(slide.id);
-    const payload = {
-      headline: slide.headline || '',
-      description: slide.description || '',
-      theme: slide.theme || 'fjord',
-      image: slide.image || '',
-      storagePath: slide.storagePath || null,
-      order: typeof slide.order === 'number' ? slide.order : 0,
-      updatedAt:
-        firebase.firestore?.FieldValue?.serverTimestamp?.() || new Date().toISOString(),
-    };
-
-    if (!slide.createdAt) {
-      const createdValue = firebase.firestore?.FieldValue?.serverTimestamp?.() || new Date().toISOString();
-      payload.createdAt = createdValue;
-      if (typeof createdValue === 'string') {
-        slide.createdAt = createdValue;
-      }
-    }
-
-    await docRef.set(payload, { merge: true });
-  } catch (error) {
-    console.warn('Kunne ikke synkronisere slide til Firebase', error);
-  }
-}
-
-function shouldUseFirebaseSlides() {
-  const config = state.settings?.firebase?.config;
-  return Boolean(config && config.apiKey && state.settings?.firebase?.useSlidesStorage && firebaseServices.firestore);
-}
-
-async function initializeFirebaseIfConfigured() {
+async function initializeFirebase() {
   if (typeof firebase === 'undefined') {
-    console.warn('Firebase SDK ikke indlæst.');
+    appendSyncOutput('Firebase SDK kunne ikke indlæses.');
     return;
   }
 
-  const config = state.settings?.firebase?.config;
-  if (!config?.apiKey) {
-    detachFirebaseSlideSubscription();
-    firebaseServices = { storage: null, firestore: null };
+  if (!FIREBASE_CONFIG) {
+    appendSyncOutput('Tilføj dine Firebase-nøgler i firebase-config.js for at aktivere synkronisering.');
     return;
   }
 
   try {
-    if (firebaseApp && firebaseApp.options?.apiKey !== config.apiKey) {
-      firebaseApp.delete?.();
-      firebaseApp = null;
-    }
-
     if (!firebaseApp) {
-      const existing = firebase.apps?.find((app) => app.options?.apiKey === config.apiKey);
-      firebaseApp = existing || firebase.initializeApp(config);
+      const existing = firebase.apps?.find((app) => app.options?.apiKey === FIREBASE_CONFIG.apiKey);
+      firebaseApp = existing || firebase.initializeApp(FIREBASE_CONFIG);
     }
 
     firebaseServices.storage = firebase.storage();
     firebaseServices.firestore = firebase.firestore();
+    kioskDocRef = firebaseServices.firestore.collection(FIREBASE_COLLECTION).doc(FIREBASE_DOCUMENT);
+
+    await ensureCloudState();
+    subscribeToCloudState();
+    isCloudReady = true;
+    appendSyncOutput(
+      `Forbundet til Firebase-projektet ${FIREBASE_CONFIG.projectId || FIREBASE_DOCUMENT}. Alle ændringer gemmes i skyen.`
+    );
   } catch (error) {
-    console.warn('Kunne ikke initialisere Firebase', error);
-    appendSyncOutput('Kunne ikke initialisere Firebase. Kontrollér nøglerne.');
+    console.error('Kunne ikke initialisere Firebase', error);
+    appendSyncOutput('Kunne ikke oprette forbindelse til Firebase. Kontrollér konfigurationen i firebase-config.js.');
     firebaseServices = { storage: null, firestore: null };
-    return;
-  }
-
-  if (state.settings?.firebase?.useSlidesStorage) {
-    await ensureCloudSlides();
   }
 }
 
-async function handleFirebaseSubmit(event) {
-  event.preventDefault();
-  const config = {
-    apiKey: elements.firebaseApiKey?.value.trim() || undefined,
-    authDomain: elements.firebaseAuthDomain?.value.trim() || undefined,
-    projectId: elements.firebaseProjectId?.value.trim() || undefined,
-    storageBucket: elements.firebaseStorageBucket?.value.trim() || undefined,
-    messagingSenderId: elements.firebaseMessagingSender?.value.trim() || undefined,
-    appId: elements.firebaseAppId?.value.trim() || undefined,
-  };
-
-  const hasValues = Object.values(config).some(Boolean);
-  state.settings.firebase.config = hasValues ? config : null;
-  if (!hasValues) {
-    state.settings.firebase.useSlidesStorage = false;
-  }
-  saveState();
-  await initializeFirebaseIfConfigured();
-  renderFirebaseSettings();
-  renderScreensaverAdmin();
-  appendSyncOutput(hasValues ? 'Gemte Firebase-konfigurationen.' : 'Ryddede Firebase-konfigurationen.');
-}
-
-function handleFirebaseClear() {
-  state.settings.firebase.config = null;
-  state.settings.firebase.useSlidesStorage = false;
-  detachFirebaseSlideSubscription();
-  firebaseApp?.delete?.();
-  firebaseApp = null;
-  firebaseServices = { storage: null, firestore: null };
-  renderFirebaseSettings();
-  renderScreensaverAdmin();
-  saveState();
-  appendSyncOutput('Firebase-konfigurationen er ryddet.');
-}
-
-async function handleFirebaseSlideToggle(event) {
-  state.settings.firebase.useSlidesStorage = event.target.checked;
-  saveState();
-  if (state.settings.firebase.useSlidesStorage) {
-    await initializeFirebaseIfConfigured();
-    if (shouldUseFirebaseSlides()) {
-      await ensureCloudSlides();
-      appendSyncOutput('Firebase-synkronisering for slides er aktiveret.');
+async function ensureCloudState() {
+  if (!kioskDocRef) return;
+  try {
+    const snapshot = await kioskDocRef.get();
+    if (!snapshot.exists) {
+      const seed = ensureStateDefaults(state);
+      seed.updatedAt = new Date().toISOString();
+      seed.settings.kiosk = {
+        collection: FIREBASE_COLLECTION,
+        document: FIREBASE_DOCUMENT,
+        lastSynced: seed.updatedAt,
+      };
+      await kioskDocRef.set(serializeForFirestore(seed), { merge: false });
+      state = seed;
     } else {
-      appendSyncOutput('Firebase er ikke korrekt konfigureret endnu.');
-      event.target.checked = false;
-      state.settings.firebase.useSlidesStorage = false;
+      state = ensureStateDefaults(snapshot.data());
     }
-  } else {
-    detachFirebaseSlideSubscription();
-    appendSyncOutput('Slides synkroniseres nu kun lokalt.');
-  }
-  renderFirebaseSettings();
-}
-
-function detachFirebaseSlideSubscription() {
-  if (typeof firebaseSlideUnsubscribe === 'function') {
-    firebaseSlideUnsubscribe();
-  }
-  firebaseSlideUnsubscribe = null;
-}
-
-async function ensureCloudSlides() {
-  if (!firebaseServices.firestore) return;
-  detachFirebaseSlideSubscription();
-
-  firebaseSlideUnsubscribe = firebaseServices.firestore
-    .collection('screensaverSlides')
-    .orderBy('order')
-    .onSnapshot(
-      (snapshot) => {
-        const slides = snapshot.docs.map((doc, index) => ({
-          id: doc.id,
-          ...doc.data(),
-          order: typeof doc.data().order === 'number' ? doc.data().order : index,
-        }));
-        if (slides.length) {
-          state.screensaver.slides = normalizeSlides(slides);
-          renderSlides();
-          renderScreensaverAdmin();
-          saveState();
-        }
-      },
-      (error) => console.warn('Firebase slides subscription fejlede', error)
-    );
-
-  const snapshot = await firebaseServices.firestore
-    .collection('screensaverSlides')
-    .orderBy('order')
-    .get();
-
-  if (snapshot.empty && state.screensaver.slides.length) {
-    await Promise.all(
-      state.screensaver.slides.map((slide, index) =>
-        firebaseServices.firestore.collection('screensaverSlides').doc(slide.id).set({
-          headline: slide.headline || '',
-          description: slide.description || '',
-          theme: slide.theme || 'fjord',
-          image: slide.image || '',
-          storagePath: slide.storagePath || null,
-          order: index,
-          createdAt: firebase.firestore?.FieldValue?.serverTimestamp?.() || new Date().toISOString(),
-        })
-      )
-    );
+    renderSlides();
+    renderAll();
+  } catch (error) {
+    console.error('Kunne ikke hente state fra Firestore', error);
+    appendSyncOutput('Kunne ikke hente data fra skyen. Prøv at genindlæse siden.');
   }
 }
 
-async function handleQrSubmit(event) {
-  event.preventDefault();
-  state.qrLinks.employee = elements.qrEmployee?.value.trim() || '';
-  state.qrLinks.guest = elements.qrGuest?.value.trim() || '';
-  updateQrCodes();
-  saveState();
-  appendSyncOutput('Opdaterede QR-links.');
-}
-
-async function uploadSlideToFirebase(file, slide) {
-  if (!firebaseServices.storage) {
-    throw new Error('Firebase Storage er ikke initialiseret.');
+function subscribeToCloudState() {
+  if (!kioskDocRef || !firebaseServices.firestore) return;
+  if (typeof unsubscribeState === 'function') {
+    unsubscribeState();
   }
-  const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
-  const path = `screensaver/${slide.id}-${Date.now()}-${safeName}`;
-  const storageRef = firebaseServices.storage.ref(path);
-  await storageRef.put(file);
-  const url = await storageRef.getDownloadURL();
-  return { url, path };
+
+  unsubscribeState = kioskDocRef.onSnapshot(
+    (doc) => {
+      if (!doc.exists) return;
+      isApplyingRemoteState = true;
+      isCloudReady = true;
+      hasCloudWarning = false;
+      state = ensureStateDefaults(doc.data());
+      renderSlides();
+      renderAll();
+      isApplyingRemoteState = false;
+    },
+    (error) => {
+      console.error('Firestore subscription fejl', error);
+      appendSyncOutput('Forbindelsen til Firebase blev afbrudt. Ændringer gemmes igen når forbindelsen er tilbage.');
+      isCloudReady = false;
+    }
+  );
 }
 
-async function deleteFirebaseAsset(path) {
+async function deleteStorageAsset(path) {
   if (!firebaseServices.storage || !path) return;
   try {
     await firebaseServices.storage.ref(path).delete();
@@ -1410,13 +1288,13 @@ async function deleteFirebaseAsset(path) {
   }
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+async function handleQrSubmit(event) {
+  event.preventDefault();
+  state.qrLinks.employee = elements.qrEmployee?.value.trim() || '';
+  state.qrLinks.guest = elements.qrGuest?.value.trim() || '';
+  updateQrCodes();
+  commitState();
+  appendSyncOutput('Opdaterede QR-links.');
 }
 
 function populateEmployeeForm(employee) {
@@ -1436,6 +1314,7 @@ function deleteEmployee(id) {
   }
   appendSyncOutput(`Fjernede medarbejder: ${id}`);
   renderAll();
+  commitState();
 }
 
 function resetPolicyAcknowledgement(id) {
@@ -1446,6 +1325,7 @@ function resetPolicyAcknowledgement(id) {
       `Politik-godkendelser nulstillet for ${employee ? `${employee.firstName} ${employee.lastName}` : id}.`
     );
     renderAll();
+    commitState();
   } else {
     appendSyncOutput('Ingen politik-godkendelser at nulstille.');
   }
@@ -1484,6 +1364,7 @@ function handleQuickAction(event) {
   }
 
   renderAll();
+  commitState();
 }
 
 function exportData() {
@@ -1513,6 +1394,7 @@ function handleImport(event) {
       appendSyncOutput(`Importerede data fra ${file.name}.`);
       renderSlides();
       renderAll();
+      commitState();
     } catch (error) {
       appendSyncOutput(`Kunne ikke importere fil: ${error.message}`);
     }

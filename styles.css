@@ -87,6 +87,8 @@ body {
 .overlay-top-left {
   top: 54px;
   left: 54px;
+  background: none;
+  padding: 0;
 }
 
 .overlay-bottom-center {
@@ -101,7 +103,10 @@ body {
 
 .logo {
   height: 72px;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.35));
+}
+
+.screensaver .logo {
+  filter: none;
 }
 
 .welcome-tagline {

@@ -13,56 +13,53 @@ registrering af medarbejdere og gæster inspireret af funktionaliteten fra Swipe
 - **Adminpanel** til at vedligeholde medarbejderlisten direkte fra skærmen eller via import/eksport (JSON).
 - **Statistik og sikkerhed**: Live overblik over hvem der er i bygningen, brandøvelses-knapper og
   evakueringsliste.
-- **Synkronisering**: Data gemmes i browserens `localStorage`, kan eksporteres/importeres og kan udvides med Firebase
-  Storage/Firestore for løbende cloud-synkronisering.
+- **Synkronisering**: State, medarbejdere og slides gemmes centralt i Firebase Firestore & Storage og opdateres live på
+  alle skærme.
 - **QR-selvbetjening**: Kioskvisningen viser QR-koder, der kan udskiftes med virksomhedens egne links til hurtig
   check-ind/out og gæsteregistrering.
 
 ## Kom godt i gang
 
-1. Åbn `index.html` i en browser på en 16:9 vertikal skærm. Layoutet er optimeret til 1080×1920.
-2. Tryk på pauseskærmen for at gå til registreringsvisningen. Inaktivitet sender brugeren tilbage til
+1. Kopiér `firebase-config.example.js` til `firebase-config.js` og indsæt nøglerne fra virksomhedens Firebase-projekt.
+   Her kan du også ændre hvilken Firestore-collection/dokument kiosken skriver til.
+2. Åbn `index.html` i en browser på en 16:9 vertikal skærm. Layoutet er optimeret til 1080×1920.
+3. Tryk på pauseskærmen for at gå til registreringsvisningen. Inaktivitet sender brugeren tilbage til
    pauseskærmen automatisk.
-3. Brug søgefeltet eller rul gennem afdelingsoversigten for at tjekke medarbejdere ind/ud eller registrere
+4. Brug søgefeltet eller rul gennem afdelingsoversigten for at tjekke medarbejdere ind/ud eller registrere
    fravær.
-4. Registrér gæster via formularen. Der logges automatisk en simuleret SMS-notifikation til værten.
-5. Åbn adminpanelet (`Admin & sync`), hvor medarbejderlisten kan opdateres, eksporteres eller importeres.
+5. Registrér gæster via formularen. Der logges automatisk en simuleret SMS-notifikation til værten.
+6. Åbn adminpanelet (`Admin & sync`), hvor medarbejderlisten kan opdateres, eksporteres eller importeres.
 
 ## Opdatering af medarbejdere
 
 - **Direkte i UI**: Brug formularen i adminpanelet til at tilføje, redigere eller slette medarbejdere. Når en
-  medarbejder er valgt til redigering, udfyldes felterne automatisk.
+  medarbejder er valgt til redigering, udfyldes felterne automatisk og gemmes straks i Firestore.
 - **JSON-import**: Eksportér først eksisterende data for at få strukturen. Redigér filen (tilføj fx nye medarbejdere
-  med felterne `firstName`, `lastName`, `department`, `role`, `contact`, `photo`). Importér derefter filen igen.
+  med felterne `firstName`, `lastName`, `department`, `role`, `contact`, `photo`). Importér derefter filen igen – data
+  sendes til Firestore i ét hug.
+- **Billeder**: Upload medarbejderportrætter til samme Firebase Storage-bucket (fx mappen `/people/`) og indsæt den
+  genererede download-URL i feltet “Billede-URL”.
 - **Programmatisk**: `seedEmployees` kan redigeres i `app.js`, men daglig drift klares hurtigst via adminpanelet eller
   import/eksport.
 
 ### Vedligeholdelse af politikker
 
 - Alle politikgodkendelser kan nulstilles fra adminpanelet via knappen 📄 ud for den enkelte medarbejder.
-- Politikhistorik gemmes sammen med den øvrige state i browseren og eksporteres til JSON.
+- Politikhistorik gemmes sammen med den øvrige state i Firestore og eksporteres via JSON.
 
 ## Pauseskærm & billedbank
 
 - Åbn adminpanelet og rul til sektionen **"Pauseskærm & billedbank"** for at redigere overskrift, brødtekst, tema og
   billedmateriale på hvert slide.
-- Klik **"Upload billede"** for at vælge et nyt foto. Standarden gemmer filen lokalt (base64) og vises straks i
-  karusellen.
-- Brug pileknapperne til at ændre rækkefølgen. Alle ændringer gemmes automatisk i browseren og kan eksporteres via
-  JSON-filen.
-- Ønskes en fast standardpakke ved deploy, kan `defaultSlides` i `app.js` opdateres.
+- Klik **"Upload billede"** for at vælge et nyt foto. Filerne gemmes i den Firebase Storage-mappe, der er defineret i
+  `firebase-config.js` (standard `/screensaver`). Download-URL'en gemmes i Firestore og distribueres til alle kiosker.
+- Brug pileknapperne til at ændre rækkefølgen. Ændringerne skrives direkte til Firestore, så alle enheder straks ser
+  samme slide-orden.
+- Ønskes en fast standardpakke ved deploy, kan `defaultSlides` i `app.js` opdateres – første opstart synker defaults til
+  skyen, hvis dokumentet er tomt.
 
-### Bedste oplevelse for fælles skærme
-
-- **Lokal lagring (hurtigst)**: Passer til enkeltstående skærme. Billeder gemmes i browseren og kræver manuel import
-  på andre enheder.
-- **Firebase Storage/Firestore (anbefalet til flere skærme)**: Indtast Firebase-nøglerne i sektionen "Firebase
-  opsætning" og aktiver "Synkronisér slides via Firebase". Herefter uploades billederne til Storage og metadata
-  gemmes i Firestore, så alle skærme, tablets og mobiler med samme konfiguration opdateres automatisk. Eksisterende
-  lokale slides bliver skubbet op første gang, så du får en fælles billedbank.
-
-> Hvis virksomheden allerede anvender en anden CDN eller DAM, kan uploadknappen pege mod en ekstern API i stedet for
-> Firebase. Strukturen i `handleSlideUploadChange` gør det nemt at skifte ud.
+> Hvis virksomheden allerede anvender en anden CDN eller DAM, kan upload-funktionen i `handleSlideUploadChange`
+> udskiftes, så den peger mod det ønskede API. Behold blot den downloadbare URL i state.
 
 ## QR-selvbetjening
 
@@ -76,10 +73,22 @@ Gæster og medarbejdere kan altså enten benytte hovedskærmen eller scanne en k
 enhed. Når en gæst registrerer sig via koden, rammer de samme workflow som på skærmen, og værten kan fortsat få en
 notifikation via `notifyHost`-hooket.
 
+## Firebase opsætning
+
+- Redigér `firebase-config.js` med nøgler fra [Firebase Console](https://console.firebase.google.com/). Filen må gerne
+  ligge offentligt, da nøglerne bruges til klient-tilstand.
+- Du kan ændre hvilken collection/dokument appen bruger ved at sætte `window.SUBRA_KIOSK_COLLECTION` og
+  `window.SUBRA_KIOSK_DOCUMENT`. Brug dette til at opdele lokationer eller testmiljøer.
+- `window.SUBRA_ASSET_FOLDER` bestemmer hvilken mappe i Storage der bruges til slides. Standard er `screensaver`.
+- Sørg for at Firestore og Storage har sikkerhedsregler, der tillader skrivning/læsning for kiosken (fx med App Check
+  eller regelsæt målrettet signeret trafik).
+
 ## Assets & layout
 
-- Logoet ligger i `assets/logo.svg`. Billeder, som uploades fra adminpanelet, havner automatisk i browserens storage
-  eller i Firebase Storage (hvis aktiveret), så der er ikke længere behov for manuel placering i `assets/`.
+- Logoet ligger i `assets/logo.svg` og vises nu uden baggrund eller skygge på pauseskærmen, så transparente filer står
+  frit oven på billederne.
+- Alle slides og medarbejderfotos bør hostes i Firebase Storage eller et tilsvarende CDN. Upload direkte fra
+  adminpanelet gemmer i Storage, mens medarbejderfotos indsættes som delte URL'er.
 - Layoutet er optimeret til 16:9 i højformat (1080×1920). Når appen åbnes på en anden opløsning, centreres den med
   samme proportioner.
 

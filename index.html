@@ -17,6 +17,7 @@
   <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
   <script defer src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script defer src="firebase-config.js"></script>
   <script defer src="app.js"></script>
 </head>
 <body>
@@ -153,9 +154,9 @@
       <section class="sync-section">
         <h2>Synkronisering og opdatering</h2>
         <p>
-          Løsningen gemmer data lokalt i browseren for at fungere offline. Brug knapperne herunder til at synkronisere
-          med andre enheder eller opdatere medarbejderlisten fra mobilen. I en produktion kan dette kobles på en sky-
-          tjeneste (f.eks. Firebase, Supabase eller virksomhedens API) for live-opdateringer.
+          Alle medarbejdere, gæster og slides gemmes automatisk i Firebase Firestore. Hvis flere kiosker peger på det
+          samme dokument, ser de de samme data med det samme. Brug eksport/import herunder som backup eller til hurtig
+          masseopdatering.
         </p>
         <div class="sync-actions">
           <button class="ghost" id="export-data">Eksporter data</button>
@@ -269,41 +270,28 @@
     </section>
     <section class="drawer-section">
       <h3>Pauseskærm &amp; billedbank</h3>
-      <p>Tilføj slides, redigér tekster og upload fotos direkte fra skærmen.</p>
+      <p>
+        Tilføj slides, redigér tekster og upload fotos direkte fra skærmen. Billederne gemmes i Firebase Storage under
+        mappen <code>/screensaver</code>, så alle skærme deler den samme billedbank.
+      </p>
       <div id="screensaver-admin" class="drawer-list"></div>
       <div class="drawer-actions">
         <button type="button" class="ghost" id="add-slide">Tilføj slide</button>
-        <label class="checkbox inline">
-          <input type="checkbox" id="use-firebase-slides" />
-          Synkronisér slides via Firebase Storage/Firestore
-        </label>
       </div>
       <input type="file" id="slide-upload" accept="image/*" hidden />
     </section>
     <section class="drawer-section">
-      <h3>Firebase opsætning</h3>
+      <h3>Sky-konfiguration</h3>
       <p>
-        Indtast nøglerne fra dit Firebase-projekt for at synkronisere medarbejdere, gæster og pauseskærmsbilleder på
-        tværs af enheder. Felterne gemmes lokalt og kan eksporteres sammen med resten af konfigurationen.
+        Appen læser dine Firebase-nøgler fra filen <code>firebase-config.js</code>. Tilpas filen med projektets
+        <code>apiKey</code>, <code>projectId</code> osv. – herefter forbindes alle kiosker automatisk til det samme
+        Firestore-dokument.
       </p>
-      <form id="firebase-form" class="drawer-form">
-        <div class="form-grid">
-          <label>apiKey<input id="firebase-api-key" autocomplete="off" /></label>
-          <label>authDomain<input id="firebase-auth-domain" autocomplete="off" /></label>
-          <label>projectId<input id="firebase-project-id" autocomplete="off" /></label>
-          <label>storageBucket<input id="firebase-storage-bucket" autocomplete="off" /></label>
-          <label>messagingSenderId<input id="firebase-messaging-sender" autocomplete="off" /></label>
-          <label>appId<input id="firebase-app-id" autocomplete="off" /></label>
-        </div>
-        <div class="drawer-actions">
-          <button type="submit" class="primary">Gem Firebase-konfiguration</button>
-          <button type="button" class="ghost" id="clear-firebase">Ryd</button>
-        </div>
-      </form>
-      <p class="form-hint">
-        Når Firebase er aktiveret og synkronisering er slået til, holdes slides opdateret via Firestore og billeder
-        gemmes i Storage.
-      </p>
+      <ul class="drawer-info">
+        <li><code>SUBRA_KIOSK_COLLECTION</code> og <code>SUBRA_KIOSK_DOCUMENT</code> kan sættes i filen for at dele eller opdele lokationer.</li>
+        <li>Slides uploades til Storage og metadata gemmes i Firestore. Ændringer vises live på alle skærme.</li>
+        <li>Tilføj evt. servicekonto eller backend-funktioner for SMS-notifikationer, gæsteadgang m.m.</li>
+      </ul>
     </section>
     <section class="drawer-section">
       <h3>QR-selvbetjening</h3>
@@ -321,8 +309,8 @@
     <section class="drawer-section">
       <h3>Opsætning</h3>
       <ul class="drawer-info">
-        <li>Slides kan uploades direkte eller synkroniseres via Firebase Storage.</li>
-        <li>Medarbejderlisten kan vedligeholdes manuelt her eller via import/eksport af JSON.</li>
+        <li>Slides uploades direkte til Firebase Storage og vises live på alle skærme.</li>
+        <li>Medarbejderlisten vedligeholdes i Firestore – brug import/eksport for større ændringer.</li>
         <li>QR-links peger typisk mod mobilformularer eller apps til selvbetjening.</li>
         <li>Integrér mod SMS/e-mail ved at udvide funktionen <code>notifyHost</code>.</li>
       </ul>
