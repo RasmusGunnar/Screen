@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="da">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SUBRA · Adminportal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="admin.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script defer src="supabase-config.js"></script>
+    <script defer src="defaults.js"></script>
+    <script defer src="admin.js"></script>
+  </head>
+  <body>
+    <div id="admin-app" class="admin-app">
+      <section id="login-view" class="auth-panel">
+        <img src="assets/logo.svg" alt="SUBRA" class="auth-logo" />
+        <div class="auth-copy">
+          <h1>Velkommen tilbage</h1>
+          <p>Log ind for at administrere medarbejdere, slides, QR-koder og rapporter.</p>
+        </div>
+        <form id="login-form" class="auth-form">
+          <label>
+            <span>E-mail</span>
+            <input type="email" id="login-email" autocomplete="username" required />
+          </label>
+          <label>
+            <span>Adgangskode</span>
+            <input type="password" id="login-passcode" autocomplete="current-password" required />
+          </label>
+          <button type="submit" class="primary">Log ind</button>
+          <p id="login-error" class="auth-error" role="alert" aria-live="assertive"></p>
+          <p id="login-hint" class="auth-hint"></p>
+        </form>
+      </section>
+
+      <main id="admin-main" class="hidden" aria-live="polite">
+        <header class="admin-header">
+          <div class="header-brand">
+            <img src="assets/logo.svg" alt="SUBRA" class="header-logo" />
+            <div>
+              <h1>SUBRA Workplace Admin</h1>
+              <p id="active-admin"></p>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button id="sync-now" class="ghost">Synkroniser nu</button>
+            <button id="logout" class="ghost">Log ud</button>
+          </div>
+        </header>
+
+        <section class="stat-grid" id="stat-grid" aria-label="Nøgletal"></section>
+
+        <section class="panel-grid">
+          <article class="panel" aria-labelledby="activity-title">
+            <header>
+              <h2 id="activity-title">Aktivitetslog</h2>
+              <div class="panel-actions">
+                <label>
+                  <span>Filtrér afdeling</span>
+                  <select id="activity-department-filter"></select>
+                </label>
+                <label>
+                  <span>Vis</span>
+                  <select id="activity-type-filter">
+                    <option value="all">Alle events</option>
+                    <option value="status-change">Statusændringer</option>
+                    <option value="guest-checkin">Gæster</option>
+                  </select>
+                </label>
+              </div>
+            </header>
+            <div class="table-scroll">
+              <table class="activity-table">
+                <thead>
+                  <tr>
+                    <th>Tidspunkt</th>
+                    <th>Medarbejder/gæst</th>
+                    <th>Type</th>
+                    <th>Detaljer</th>
+                  </tr>
+                </thead>
+                <tbody id="activity-body"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel" aria-labelledby="export-title">
+            <header>
+              <h2 id="export-title">Dataudtræk</h2>
+            </header>
+            <form id="export-form" class="panel-form">
+              <div class="form-row">
+                <label>
+                  <span>Medarbejder</span>
+                  <select id="export-employee"></select>
+                </label>
+                <label>
+                  <span>Fra dato</span>
+                  <input type="date" id="export-from" />
+                </label>
+                <label>
+                  <span>Til dato</span>
+                  <input type="date" id="export-to" />
+                </label>
+              </div>
+              <div class="form-row">
+                <label class="checkbox">
+                  <input type="checkbox" id="export-include-guests" checked />
+                  <span>Medtag gæsteregistreringer</span>
+                </label>
+                <label class="checkbox">
+                  <input type="checkbox" id="export-include-status" checked />
+                  <span>Medtag statusændringer</span>
+                </label>
+              </div>
+              <button type="submit" class="primary">Download CSV</button>
+              <p id="export-feedback" class="panel-feedback" aria-live="polite"></p>
+            </form>
+          </article>
+        </section>
+
+        <section class="panel-grid">
+          <article class="panel" aria-labelledby="employee-title">
+            <header>
+              <h2 id="employee-title">Medarbejdere</h2>
+              <button id="new-employee" class="ghost">Ny medarbejder</button>
+            </header>
+            <form id="employee-form" class="panel-form">
+              <input type="hidden" id="employee-id" />
+              <div class="form-row">
+                <label><span>Fornavn</span><input id="employee-first" required /></label>
+                <label><span>Efternavn</span><input id="employee-last" required /></label>
+                <label><span>Afdeling</span><input id="employee-department" required /></label>
+              </div>
+              <div class="form-row">
+                <label><span>Rolle</span><input id="employee-role" /></label>
+                <label><span>Kontakt</span><input id="employee-contact" /></label>
+                <label><span>Billede-URL</span><input id="employee-photo" placeholder="https://" /></label>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="primary">Gem medarbejder</button>
+                <button type="button" id="reset-form" class="ghost">Nulstil</button>
+              </div>
+            </form>
+            <div id="employee-list" class="list"></div>
+          </article>
+
+          <article class="panel" aria-labelledby="absence-title">
+            <header>
+              <h2 id="absence-title">Fraværsoversigt</h2>
+            </header>
+            <div id="absence-list" class="list"></div>
+          </article>
+        </section>
+
+        <section class="panel-grid">
+          <article class="panel" aria-labelledby="slides-title">
+            <header>
+              <h2 id="slides-title">Pauseskærm &amp; billedbank</h2>
+              <button id="add-slide" class="ghost">Tilføj slide</button>
+            </header>
+            <div id="screensaver-admin" class="list"></div>
+            <input type="file" id="slide-upload" accept="image/*" hidden />
+          </article>
+
+          <article class="panel" aria-labelledby="qr-title">
+            <header>
+              <h2 id="qr-title">QR-selvbetjening</h2>
+            </header>
+            <form id="qr-form" class="panel-form">
+              <div class="form-row">
+                <label><span>Medarbejder-URL</span><input id="qr-employee" placeholder="https://" /></label>
+                <label><span>Gæste-URL</span><input id="qr-guest" placeholder="https://" /></label>
+              </div>
+              <button type="submit" class="primary">Opdater QR-koder</button>
+            </form>
+            <div class="qr-preview">
+              <p>Aktuelle links:</p>
+              <dl>
+                <dt>Medarbejdere</dt>
+                <dd id="qr-employee-link"></dd>
+                <dt>Gæster</dt>
+                <dd id="qr-guest-link"></dd>
+              </dl>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel">
+          <header>
+            <h2>Synkronisering</h2>
+          </header>
+          <div class="sync-log" id="sync-log" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
