@@ -25,6 +25,21 @@ const SUMMARY_LABELS = {
   guests: 'Dagens gæster',
 };
 
+const STATUS_LABELS = {
+  onsite: 'På kontoret',
+  remote: 'Arbejder hjemmefra',
+  away: 'Fravær',
+  unknown: 'Ingen status registreret',
+};
+
+const DEPARTMENT_ORDER = [
+  'Administration',
+  'Produktion',
+  'Analyse og Inspection',
+  'R&D',
+  'Værksted',
+];
+
 const SUMMARY_EMPTY_MESSAGES = {
   onsite: 'Der er ingen medarbejdere registreret på kontoret lige nu.',
   remote: 'Ingen medarbejdere er registreret som hjemmearbejde.',
@@ -356,8 +371,12 @@ function renderDepartments(filter = '') {
   container.innerHTML = '';
 
   const grouped = groupEmployees(state.employees);
+  const fallbackDepartments = Array.from(grouped.keys()).filter((dept) => !DEPARTMENT_ORDER.includes(dept));
+  const sortedFallback = fallbackDepartments.sort((a, b) => a.localeCompare(b, 'da', { sensitivity: 'base' }));
+  const departmentsToRender = [...new Set([...DEPARTMENT_ORDER, ...sortedFallback])];
 
-  grouped.forEach(([department, employees]) => {
+  departmentsToRender.forEach((department) => {
+    const employees = grouped.get(department) || [];
     const filteredEmployees = employees.filter((emp) => {
       if (!filterValue) return true;
       const haystack = `${emp.firstName} ${emp.lastName} ${emp.department} ${emp.role}`.toLowerCase();
@@ -388,11 +407,28 @@ function renderDepartments(filter = '') {
     const grid = document.createElement('div');
     grid.className = 'employee-grid';
 
-    filteredEmployees
-      .sort((a, b) => a.lastName.localeCompare(b.lastName, 'da', { sensitivity: 'base' }))
-      .forEach((employee) => {
+    const priority = { onsite: 0, remote: 1, away: 2 };
+    const employeesToRender = filteredEmployees
+      .slice()
+      .sort((a, b) => {
+        const priorityA = priority[a.status] ?? 3;
+        const priorityB = priority[b.status] ?? 3;
+        if (priorityA !== priorityB) return priorityA - priorityB;
+        const lastNameCompare = (a.lastName || '').localeCompare(b.lastName || '', 'da', { sensitivity: 'base' });
+        if (lastNameCompare !== 0) return lastNameCompare;
+        return (a.firstName || '').localeCompare(b.firstName || '', 'da', { sensitivity: 'base' });
+      });
+
+    if (!employeesToRender.length) {
+      const emptyState = document.createElement('p');
+      emptyState.className = 'department-empty';
+      emptyState.textContent = 'Ingen medarbejdere registreret.';
+      grid.appendChild(emptyState);
+    } else {
+      employeesToRender.forEach((employee) => {
         grid.appendChild(createEmployeeCard(employee));
       });
+    }
 
     departmentCard.appendChild(grid);
     container.appendChild(departmentCard);
@@ -402,32 +438,28 @@ function renderDepartments(filter = '') {
 function groupEmployees(employees) {
   const map = new Map();
   employees.forEach((employee) => {
-    const key = employee.department;
+    const key = employee.department?.trim() || 'Ukendt afdeling';
     if (!map.has(key)) {
       map.set(key, []);
     }
     map.get(key).push(employee);
   });
 
-  return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'da', { sensitivity: 'base' }));
+  return map;
 }
 
 function createEmployeeCard(employee) {
   const card = document.createElement('div');
   card.className = 'employee-card';
   card.dataset.id = employee.id;
-  card.dataset.status = employee.status || 'away';
+  const status = employee.status || 'unknown';
+  card.dataset.status = status;
 
-  const avatar = document.createElement('div');
-  avatar.className = 'employee-avatar';
-  if (employee.photo) {
-    const img = document.createElement('img');
-    img.src = employee.photo;
-    img.alt = `${employee.firstName} ${employee.lastName}`;
-    avatar.appendChild(img);
-  } else {
-    avatar.textContent = `${employee.firstName?.[0] || ''}${employee.lastName?.[0] || ''}`;
-  }
+  const indicator = document.createElement('span');
+  indicator.className = 'status-indicator';
+  indicator.dataset.status = status;
+  indicator.setAttribute('aria-hidden', 'true');
+  indicator.title = STATUS_LABELS[status] || STATUS_LABELS.unknown;
 
   const info = document.createElement('div');
   info.className = 'employee-info';
@@ -465,7 +497,7 @@ function createEmployeeCard(employee) {
 
   actions.append(checkInButton, checkOutButton, statusButton);
 
-  card.append(avatar, info, actions);
+  card.append(indicator, info, actions);
   return card;
 }
 
@@ -485,8 +517,10 @@ function formatStatusText(employee) {
         return `Fravær: ${from} – ${to}${employee.statusNotes ? ` · ${employee.statusNotes}` : ''}`;
       }
       return employee.statusNotes || 'Fravær registreret';
+    case 'unknown':
+      return 'Ingen status registreret i dag.';
     default:
-      return 'Ingen registrering endnu';
+      return 'Ingen status registreret i dag.';
   }
 }
 
@@ -696,8 +730,9 @@ function populateGuestHost() {
   const select = elements.guestHost;
   select.innerHTML = '';
 
-  groupEmployees(state.employees).forEach(([, employees]) => {
+  groupEmployees(state.employees).forEach((employees) => {
     employees
+      .slice()
       .sort((a, b) => a.lastName.localeCompare(b.lastName, 'da', { sensitivity: 'base' }))
       .forEach((employee) => {
         if (employee.status === 'away') return;
