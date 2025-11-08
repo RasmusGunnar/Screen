@@ -1,12 +1,14 @@
 const INACTIVITY_TIMEOUT = 60000; // 60 sekunder før pauseskærm
-const SUPABASE_CONFIG = window.SUBRA_SUPABASE_CONFIG || null;
-const KIOSK_STATE_TABLE = SUPABASE_CONFIG?.tables?.kioskState || 'kiosk_state';
-const KIOSK_STATE_ID = SUPABASE_CONFIG?.kiosk?.stateId || 'subra-main';
-const KIOSK_CHANNEL = SUPABASE_CONFIG?.kiosk?.channel || `kiosk-state-${KIOSK_STATE_ID}`;
-const SCREENSAVER_BUCKET = SUPABASE_CONFIG?.storage?.screensaverBucket || 'screensaver';
-const SLIDES_FOLDER = SUPABASE_CONFIG?.storage?.slidesFolder || 'slides';
-const KIOSK_SERVICE_EMAIL = SUPABASE_CONFIG?.kiosk?.serviceEmail || null;
-const KIOSK_SERVICE_PASSWORD = SUPABASE_CONFIG?.kiosk?.servicePassword || null;
+let SUPABASE_CONFIG = null;
+let KIOSK_STATE_TABLE = 'kiosk_state';
+let KIOSK_STATE_ID = 'subra-main';
+let KIOSK_CHANNEL = `kiosk-state-${KIOSK_STATE_ID}`;
+let SCREENSAVER_BUCKET = 'screensaver';
+let SLIDES_FOLDER = 'slides';
+let KIOSK_SERVICE_EMAIL = null;
+let KIOSK_SERVICE_PASSWORD = null;
+
+applySupabaseConfig(window.SUBRA_SUPABASE_CONFIG || null);
 
 const DEFAULTS = window.SUBRA_DEFAULTS || {};
 const seedEmployees = DEFAULTS.employees || [];
@@ -50,6 +52,18 @@ const SUMMARY_EMPTY_MESSAGES = {
   away: 'Der er ikke registreret fravær i dag.',
   guests: 'Ingen gæster er registreret endnu i dag.',
 };
+
+function applySupabaseConfig(config) {
+  SUPABASE_CONFIG = config || null;
+  KIOSK_STATE_TABLE = SUPABASE_CONFIG?.tables?.kioskState || 'kiosk_state';
+  KIOSK_STATE_ID = SUPABASE_CONFIG?.kiosk?.stateId || 'subra-main';
+  KIOSK_CHANNEL =
+    SUPABASE_CONFIG?.kiosk?.channel || `kiosk-state-${KIOSK_STATE_ID}`;
+  SCREENSAVER_BUCKET = SUPABASE_CONFIG?.storage?.screensaverBucket || 'screensaver';
+  SLIDES_FOLDER = SUPABASE_CONFIG?.storage?.slidesFolder || 'slides';
+  KIOSK_SERVICE_EMAIL = SUPABASE_CONFIG?.kiosk?.serviceEmail || null;
+  KIOSK_SERVICE_PASSWORD = SUPABASE_CONFIG?.kiosk?.servicePassword || null;
+}
 
 let state = ensureStateDefaults();
 let inactivityTimer;
@@ -112,6 +126,8 @@ const elements = {
   summaryTitle: document.getElementById('summary-title'),
   summaryList: document.getElementById('summary-list'),
 };
+
+window.addEventListener('subra:supabase-config-ready', handleSupabaseConfigEvent);
 
 init();
 
@@ -1144,6 +1160,36 @@ async function deleteSlide(slideId) {
 
   if (removed?.storagePath) {
     await deleteStorageAsset(removed.storagePath);
+  }
+}
+
+function handleSupabaseConfigEvent(event) {
+  const nextConfig = event?.detail || window.SUBRA_SUPABASE_CONFIG || null;
+  if (realtimeChannel && supabaseClient) {
+    try {
+      supabaseClient.removeChannel(realtimeChannel);
+    } catch (error) {
+      console.warn('Kunne ikke afregistrere eksisterende Supabase-kanal', error);
+    }
+  }
+
+  realtimeChannel = null;
+  supabaseClient = null;
+  isCloudReady = false;
+  hasCloudWarning = false;
+
+  applySupabaseConfig(nextConfig);
+  handleSupabaseConfigReady();
+}
+
+function handleSupabaseConfigReady() {
+  if (state?.settings?.kiosk) {
+    state.settings.kiosk.table = KIOSK_STATE_TABLE;
+    state.settings.kiosk.id = KIOSK_STATE_ID;
+  }
+
+  if (SUPABASE_CONFIG?.url && SUPABASE_CONFIG?.anonKey) {
+    initializeSupabase();
   }
 }
 

@@ -20,3 +20,10 @@ window.SUBRA_SUPABASE_CONFIG = {
     slidesFolder: 'slides',
   },
 };
+
+if (typeof window !== 'undefined') {
+  const event = new CustomEvent('subra:supabase-config-ready', {
+    detail: window.SUBRA_SUPABASE_CONFIG,
+  });
+  window.dispatchEvent(event);
+}
