@@ -156,4 +156,7 @@ window.SUBRA_DEFAULTS = {
     employee: 'https://subra-kiosk.example.com/employee',
     guest: 'https://subra-kiosk.example.com/guest',
   },
+  policyLinks: {
+    nda: 'https://subra-kiosk.example.com/assets/subra-nda.pdf',
+  },
 };

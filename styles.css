@@ -217,6 +217,22 @@ main {
   box-shadow: var(--shadow);
   display: grid;
   gap: 8px;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  font: inherit;
+  color: inherit;
+}
+
+.summary-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 28px 60px rgba(31, 61, 74, 0.18);
+}
+
+.summary-card:focus-visible {
+  outline: 3px solid rgba(63, 127, 114, 0.55);
+  outline-offset: 4px;
 }
 
 .summary-label {
@@ -238,7 +254,6 @@ main {
   margin-bottom: 36px;
 }
 
-.checkin-card,
 .guest-card,
 .self-service-card {
   background: var(--bg-strong);
@@ -328,6 +343,20 @@ button.ghost:hover {
   gap: 12px;
 }
 
+.quick-actions-bar {
+  margin: 40px 0 0;
+  background: var(--bg-strong);
+  border-radius: calc(var(--border-radius) + 8px);
+  padding: 24px 32px;
+  box-shadow: var(--shadow);
+  display: flex;
+  justify-content: center;
+}
+
+.quick-actions-bar .quick-actions {
+  justify-content: center;
+}
+
 .guest-card form {
   display: grid;
   gap: 18px;
@@ -361,6 +390,11 @@ button.ghost:hover {
   display: grid;
   grid-template-columns: repeat(2, minmax(120px, 1fr));
   gap: 18px;
+}
+
+.qr-grid.single {
+  grid-template-columns: minmax(160px, 1fr);
+  justify-items: center;
 }
 
 .qr-grid figure {
@@ -532,12 +566,6 @@ button.ghost:hover {
   gap: 8px;
 }
 
-.policy-state {
-  color: var(--muted);
-  display: inline-block;
-  margin-top: 4px;
-}
-
 .employee-actions button {
   padding: 10px 16px;
   font-size: 0.95rem;
@@ -607,20 +635,37 @@ button.ghost:hover {
   gap: 20px;
 }
 
-.policy-modal {
-  gap: 16px;
+.summary-modal {
+  max-height: 80vh;
+  overflow-y: auto;
 }
 
-.policy-intro {
-  margin: 0;
+.summary-list {
+  display: grid;
+  gap: 12px;
+}
+
+.summary-entry {
+  background: rgba(63, 127, 114, 0.08);
+  border-radius: 16px;
+  padding: 14px 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.summary-entry span {
   color: var(--muted);
 }
 
-.policy-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 12px;
+.summary-entry small {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.summary-empty {
+  text-align: center;
+  color: var(--muted);
+  margin: 16px 0 0;
 }
 
 .checkbox {
@@ -634,6 +679,18 @@ button.ghost:hover {
 .checkbox input {
   width: auto;
   margin-top: 3px;
+}
+
+.policy-link {
+  color: var(--accent);
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.policy-link.disabled {
+  color: var(--muted);
+  text-decoration: none;
+  pointer-events: none;
 }
 
 .policy-checkboxes {
