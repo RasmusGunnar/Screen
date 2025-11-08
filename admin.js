@@ -1,9 +1,12 @@
-const FIREBASE_CONFIG = window.SUBRA_FIREBASE_CONFIG || null;
-const FIREBASE_COLLECTION = window.SUBRA_KIOSK_COLLECTION || 'kiosks';
-const FIREBASE_DOCUMENT = window.SUBRA_KIOSK_DOCUMENT || 'subra-main';
-const FIREBASE_ASSET_FOLDER = window.SUBRA_ASSET_FOLDER || 'screensaver';
+const SUPABASE_CONFIG = window.SUBRA_SUPABASE_CONFIG || null;
 const DEFAULTS = window.SUBRA_DEFAULTS || {};
-const ADMIN_AUTH = window.SUBRA_ADMIN_AUTH || null;
+const ADMIN_HINT = SUPABASE_CONFIG?.admin?.hint || '';
+const KIOSK_STATE_TABLE = SUPABASE_CONFIG?.tables?.kioskState || 'kiosk_state';
+const KIOSK_STATE_ID = SUPABASE_CONFIG?.kiosk?.stateId || 'subra-main';
+const KIOSK_CHANNEL = SUPABASE_CONFIG?.kiosk?.channel || `kiosk-state-${KIOSK_STATE_ID}`;
+const SCREENSAVER_BUCKET = SUPABASE_CONFIG?.storage?.screensaverBucket || 'screensaver';
+const SLIDES_FOLDER = SUPABASE_CONFIG?.storage?.slidesFolder || 'slides';
+const ADMIN_TABLE = SUPABASE_CONFIG?.tables?.admins || 'admins';
 const SLIDE_THEMES = [
   { value: 'fjord', label: 'Fjord · kølig blå' },
   { value: 'aurora', label: 'Aurora · grøn gradient' },
@@ -13,10 +16,8 @@ const SLIDE_THEMES = [
 ];
 
 let state = ensureStateDefaults();
-let firebaseApp = null;
-let firebaseServices = { storage: null, firestore: null };
-let kioskDocRef = null;
-let unsubscribeState = null;
+let supabaseClient = null;
+let realtimeChannel = null;
 let isCloudReady = false;
 let isApplyingRemoteState = false;
 let pendingSlideUploadId = null;
@@ -72,8 +73,8 @@ const elements = {
 initializeAdmin();
 
 function initializeAdmin() {
-  if (elements.loginHint && ADMIN_AUTH?.hint) {
-    elements.loginHint.textContent = ADMIN_AUTH.hint;
+  if (elements.loginHint) {
+    elements.loginHint.textContent = ADMIN_HINT;
   }
 
   elements.loginForm?.addEventListener('submit', handleLoginSubmit);
@@ -115,8 +116,8 @@ function ensureStateDefaults(data = {}) {
 
   const settings = {
     kiosk: {
-      collection: data.settings?.kiosk?.collection || FIREBASE_COLLECTION,
-      document: data.settings?.kiosk?.document || FIREBASE_DOCUMENT,
+      table: data.settings?.kiosk?.table || KIOSK_STATE_TABLE,
+      id: data.settings?.kiosk?.id || KIOSK_STATE_ID,
       lastSynced: data.settings?.kiosk?.lastSynced || null,
     },
   };
@@ -152,7 +153,7 @@ function normalizeSlides(slides) {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
-function serializeForFirestore(data) {
+function serializeForStorage(data) {
   return JSON.parse(
     JSON.stringify(data, (key, value) => {
       if (value === undefined) return null;
@@ -163,143 +164,203 @@ function serializeForFirestore(data) {
 
 async function handleLoginSubmit(event) {
   event.preventDefault();
-  if (!ADMIN_AUTH?.users?.length) {
-    elements.loginError.textContent = 'Ingen administratorer er konfigureret. Opdater firebase-config.js';
+  elements.loginError.textContent = '';
+
+  if (!ensureSupabaseClient()) {
+    elements.loginError.textContent = 'Konfigurer Supabase-oplysninger i supabase-config.js.';
     return;
   }
 
   const email = elements.loginEmail.value.trim().toLowerCase();
-  const passcode = elements.loginPasscode.value;
-  const user = ADMIN_AUTH.users.find((item) => item.email.toLowerCase() === email);
-  if (!user) {
-    elements.loginError.textContent = 'Ugyldig kombination af e-mail og adgangskode';
+  const password = elements.loginPasscode.value;
+
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error || !data?.user) {
+      throw error || new Error('Login mislykkedes');
+    }
+
+    await handleSupabaseLogin(data.user);
+  } catch (error) {
+    console.error('Login fejlede', error);
+    elements.loginError.textContent =
+      'Kunne ikke logge ind på Supabase. Kontrollér e-mail og adgangskode og prøv igen.';
+  }
+}
+
+async function restoreSession() {
+  if (!ensureSupabaseClient()) {
+    showLogin();
     return;
   }
 
   try {
-    const hash = await hashPasscode(passcode);
-    if (hash !== user.passcodeHash) {
-      elements.loginError.textContent = 'Ugyldig kombination af e-mail og adgangskode';
-      return;
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) {
+      throw error;
     }
 
-    activeAdmin = {
-      email: user.email,
-      name: user.name || user.email,
-    };
-    sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify({ email: user.email }));
-    elements.loginError.textContent = '';
-    showAdmin();
-    await initializeFirebase();
-  } catch (error) {
-    console.error('Login fejlede', error);
-    elements.loginError.textContent = 'Kunne ikke validere login. Prøv igen.';
-  }
-}
-
-async function hashPasscode(passcode) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(passcode);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function restoreSession() {
-  try {
-    const stored = sessionStorage.getItem(ADMIN_SESSION_KEY);
-    if (!stored) return;
-    const parsed = JSON.parse(stored);
-    if (!parsed?.email) return;
-    const user = ADMIN_AUTH?.users?.find((item) => item.email.toLowerCase() === parsed.email.toLowerCase());
-    if (!user) return;
-
-    activeAdmin = {
-      email: user.email,
-      name: user.name || user.email,
-    };
-    showAdmin();
-    void initializeFirebase();
+    const user = data.session?.user;
+    if (user) {
+      await handleSupabaseLogin(user);
+    } else {
+      showLogin();
+    }
   } catch (error) {
     console.warn('Kunne ikke gendanne admins session', error);
+    showLogin();
   }
+}
+
+async function handleSupabaseLogin(user) {
+  if (!ensureSupabaseClient()) return;
+
+  try {
+    activeAdmin = await fetchAdminProfile(user);
+  } catch (error) {
+    console.warn('Kunne ikke hente adminprofil', error);
+    activeAdmin = {
+      id: user.id,
+      email: user.email,
+      name: user.email,
+      role: 'viewer',
+    };
+  }
+
+  showAdmin();
+  await initializeSupabase();
+}
+
+function ensureSupabaseClient() {
+  if (typeof window.supabase === 'undefined') {
+    console.warn('Supabase SDK er ikke indlæst.');
+    return false;
+  }
+
+  if (!SUPABASE_CONFIG?.url || !SUPABASE_CONFIG?.anonKey) {
+    return false;
+  }
+
+  if (!supabaseClient) {
+    supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+      auth: {
+        persistSession: true,
+        storageKey: ADMIN_SESSION_KEY,
+      },
+    });
+  }
+
+  return true;
+}
+
+function showLogin() {
+  if (elements.loginView) elements.loginView.classList.remove('hidden');
+  if (elements.adminMain) elements.adminMain.classList.add('hidden');
+}
+
+async function fetchAdminProfile(user) {
+  if (!supabaseClient) {
+    throw new Error('Supabase er ikke initialiseret.');
+  }
+
+  const { data, error } = await supabaseClient
+    .from(ADMIN_TABLE)
+    .select('id, email, display_name, role')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    id: data?.id || user.id,
+    email: data?.email || user.email,
+    name: data?.display_name || user.user_metadata?.name || user.email,
+    role: data?.role || 'editor',
+  };
 }
 
 function showAdmin() {
   if (elements.loginView) elements.loginView.classList.add('hidden');
   if (elements.adminMain) elements.adminMain.classList.remove('hidden');
+  elements.loginForm?.reset();
   if (elements.activeAdmin && activeAdmin) {
-    elements.activeAdmin.textContent = `Logget ind som ${activeAdmin.name} (${activeAdmin.email})`;
+    const roleLabel = activeAdmin.role ? ` · rolle: ${activeAdmin.role}` : '';
+    elements.activeAdmin.textContent = `Logget ind som ${activeAdmin.name} (${activeAdmin.email})${roleLabel}`;
   }
 }
 
-function handleLogout() {
-  sessionStorage.removeItem(ADMIN_SESSION_KEY);
-  activeAdmin = null;
-  if (unsubscribeState) {
-    unsubscribeState();
-    unsubscribeState = null;
+async function handleLogout() {
+  try {
+    if (supabaseClient) {
+      await supabaseClient.auth.signOut();
+      if (realtimeChannel) {
+        await supabaseClient.removeChannel(realtimeChannel);
+        realtimeChannel = null;
+      }
+    }
+  } catch (error) {
+    console.warn('Kunne ikke logge ud af Supabase', error);
   }
-  firebaseServices = { storage: null, firestore: null };
-  kioskDocRef = null;
+
+  activeAdmin = null;
   isCloudReady = false;
   isApplyingRemoteState = false;
   state = ensureStateDefaults();
   renderAll();
-  if (elements.loginView) elements.loginView.classList.remove('hidden');
-  if (elements.adminMain) elements.adminMain.classList.add('hidden');
+  showLogin();
   elements.loginForm?.reset();
 }
 
-async function initializeFirebase() {
-  if (typeof firebase === 'undefined') {
-    appendSyncLog('Firebase SDK kunne ikke indlæses. Kontrollér netværket.');
-    return;
-  }
-
-  if (!FIREBASE_CONFIG) {
-    appendSyncLog('Tilføj dine Firebase-nøgler i firebase-config.js for at aktivere sky-synkronisering.');
+async function initializeSupabase() {
+  if (!supabaseClient) {
+    appendSyncLog('Supabase er ikke konfigureret endnu.');
     return;
   }
 
   try {
-    if (!firebaseApp) {
-      const existing = firebase.apps?.find((app) => app.options?.apiKey === FIREBASE_CONFIG.apiKey);
-      firebaseApp = existing || firebase.initializeApp(FIREBASE_CONFIG);
-    }
-
-    firebaseServices.storage = firebase.storage();
-    firebaseServices.firestore = firebase.firestore();
-    kioskDocRef = firebaseServices.firestore.collection(FIREBASE_COLLECTION).doc(FIREBASE_DOCUMENT);
-
     await ensureCloudState();
     subscribeToCloudState();
     isCloudReady = true;
-    appendSyncLog(`Forbundet til Firebase-projektet ${FIREBASE_CONFIG.projectId || FIREBASE_DOCUMENT}.`);
+    appendSyncLog(`Forbundet til Supabase-projektet ${safeSupabaseHost()}.`);
   } catch (error) {
-    console.error('Kunne ikke initialisere Firebase', error);
-    appendSyncLog('Kunne ikke forbinde til Firebase. Kontrollér nøgler og netværk.');
-    firebaseServices = { storage: null, firestore: null };
+    console.error('Kunne ikke initialisere Supabase', error);
+    appendSyncLog('Kunne ikke forbinde til Supabase. Kontrollér nøgler og netværk.');
   }
 }
 
 async function ensureCloudState() {
-  if (!kioskDocRef) return;
+  if (!supabaseClient) return;
   try {
-    const snapshot = await kioskDocRef.get();
-    if (!snapshot.exists) {
+    const { data, error } = await supabaseClient
+      .from(KIOSK_STATE_TABLE)
+      .select('state')
+      .eq('id', KIOSK_STATE_ID)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data || !data.state) {
       const seed = ensureStateDefaults(state);
       seed.updatedAt = new Date().toISOString();
       seed.settings.kiosk = {
-        collection: FIREBASE_COLLECTION,
-        document: FIREBASE_DOCUMENT,
+        table: KIOSK_STATE_TABLE,
+        id: KIOSK_STATE_ID,
         lastSynced: seed.updatedAt,
       };
-      await kioskDocRef.set(serializeForFirestore(seed), { merge: false });
-      appendSyncLog('Oprettede nyt kiosk-dokument i Firestore.');
+      const { error: upsertError } = await supabaseClient
+        .from(KIOSK_STATE_TABLE)
+        .upsert({ id: KIOSK_STATE_ID, state: serializeForStorage(seed) }, { onConflict: 'id' });
+      if (upsertError) {
+        throw upsertError;
+      }
+      appendSyncLog('Oprettede nyt kiosk-dokument i Supabase.');
+      applyRemoteState(seed);
     } else {
-      applyRemoteState(snapshot.data());
+      applyRemoteState(data.state);
     }
   } catch (error) {
     console.error('ensureCloudState fejlede', error);
@@ -308,20 +369,29 @@ async function ensureCloudState() {
 }
 
 function subscribeToCloudState() {
-  if (!kioskDocRef) return;
-  if (unsubscribeState) unsubscribeState();
+  if (!supabaseClient) return;
+  if (realtimeChannel) {
+    void supabaseClient.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
 
-  unsubscribeState = kioskDocRef.onSnapshot(
-    (snapshot) => {
-      if (!snapshot.exists) return;
-      const data = snapshot.data();
-      applyRemoteState(data);
-    },
-    (error) => {
-      console.error('Realtime subscription fejlede', error);
-      appendSyncLog('Realtime opdatering stoppede. Forsøger igen ved næste handling.');
-    }
-  );
+  realtimeChannel = supabaseClient
+    .channel(KIOSK_CHANNEL)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: KIOSK_STATE_TABLE, filter: `id=eq.${KIOSK_STATE_ID}` },
+      (payload) => {
+        if (!payload.new?.state) return;
+        applyRemoteState(payload.new.state);
+        appendSyncLog('Opdaterede view med data fra skyen.');
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        isCloudReady = true;
+        hasCloudWarning = false;
+      }
+    });
 }
 
 function applyRemoteState(remote) {
@@ -334,7 +404,8 @@ function applyRemoteState(remote) {
 function commitState(nextState) {
   if (isApplyingRemoteState) return;
   state = ensureStateDefaults(nextState || state);
-  if (!kioskDocRef || !firebaseServices.firestore) {
+
+  if (!supabaseClient) {
     appendSyncLog('Sky-synkronisering er ikke aktiv. Gemningen springes over.');
     return;
   }
@@ -347,18 +418,24 @@ function commitState(nextState) {
   const snapshot = ensureStateDefaults(state);
   snapshot.updatedAt = new Date().toISOString();
   snapshot.settings.kiosk = {
-    collection: FIREBASE_COLLECTION,
-    document: FIREBASE_DOCUMENT,
+    table: KIOSK_STATE_TABLE,
+    id: KIOSK_STATE_ID,
     lastSynced: snapshot.updatedAt,
   };
   state = snapshot;
 
-  kioskDocRef
-    .set(serializeForFirestore(snapshot), { merge: false })
-    .then(() => appendSyncLog('Skyen er opdateret.'))
+  supabaseClient
+    .from(KIOSK_STATE_TABLE)
+    .upsert({ id: KIOSK_STATE_ID, state: serializeForStorage(snapshot) }, { onConflict: 'id' })
+    .then(({ error }) => {
+      if (error) {
+        throw error;
+      }
+      appendSyncLog('Skyen er opdateret.');
+    })
     .catch((error) => {
       console.error('Kunne ikke gemme state', error);
-      appendSyncLog('Fejl ved skrivning til Firestore.');
+      appendSyncLog('Fejl ved skrivning til Supabase.');
     });
 }
 
@@ -768,23 +845,35 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    if (!firebaseServices.storage) {
-      throw new Error('Firebase Storage er ikke initialiseret.');
+    if (!supabaseClient) {
+      throw new Error('Supabase er ikke initialiseret.');
     }
     const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
-    const path = `${FIREBASE_ASSET_FOLDER}/screensaver/${slide.id}-${Date.now()}-${safeName}`;
-    const storageRef = firebaseServices.storage.ref(path);
-    await storageRef.put(file);
-    const url = await storageRef.getDownloadURL();
-    if (slide.storagePath && slide.storagePath !== path) {
+    const storagePath = `${SLIDES_FOLDER}/${slide.id}-${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabaseClient.storage
+      .from(SCREENSAVER_BUCKET)
+      .upload(storagePath, file, { upsert: true, contentType: file.type });
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data: publicData, error: publicError } = supabaseClient.storage
+      .from(SCREENSAVER_BUCKET)
+      .getPublicUrl(storagePath);
+    if (publicError) {
+      throw publicError;
+    }
+
+    if (slide.storagePath && slide.storagePath !== `${SCREENSAVER_BUCKET}:${storagePath}`) {
       await deleteStorageAsset(slide.storagePath);
     }
-    slide.image = url;
-    slide.storagePath = path;
+
+    slide.image = publicData.publicUrl;
+    slide.storagePath = `${SCREENSAVER_BUCKET}:${storagePath}`;
     slide.updatedAt = new Date().toISOString();
     renderScreensaverAdmin();
     commitState();
-    appendSyncLog('Opdaterede pauseskærmsbillede via upload.');
+    appendSyncLog('Opdaterede pauseskærmsbillede via Supabase Storage.');
   } catch (error) {
     console.error('Fejl ved upload af slide', error);
     appendSyncLog(`Kunne ikke uploade billede: ${error.message}`);
@@ -808,11 +897,12 @@ async function deleteSlide(slideId) {
 }
 
 async function deleteStorageAsset(path) {
-  if (!firebaseServices.storage || !path) return;
-  try {
-    await firebaseServices.storage.ref(path).delete();
-  } catch (error) {
-    console.warn('Kunne ikke slette fil i Firebase Storage', error);
+  if (!supabaseClient || !path) return;
+  const { bucket, objectPath } = parseStoragePath(path);
+  if (!bucket || !objectPath) return;
+  const { error } = await supabaseClient.storage.from(bucket).remove([objectPath]);
+  if (error) {
+    console.warn('Kunne ikke slette fil i Supabase Storage', error);
   }
 }
 
@@ -959,6 +1049,29 @@ function escapeHtml(value = '') {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function parseStoragePath(path) {
+  if (!path) {
+    return { bucket: null, objectPath: null };
+  }
+
+  if (path.includes(':')) {
+    const [bucket, ...rest] = path.split(':');
+    return { bucket, objectPath: rest.join(':').replace(/^\/+/, '') };
+  }
+
+  return { bucket: SCREENSAVER_BUCKET, objectPath: path.replace(/^\/+/, '') };
+}
+
+function safeSupabaseHost() {
+  if (!SUPABASE_CONFIG?.url) return 'supabase';
+  try {
+    return new URL(SUPABASE_CONFIG.url).hostname;
+  } catch (error) {
+    console.warn('Ugyldigt Supabase-URL i konfigurationen', error);
+    return SUPABASE_CONFIG.url;
+  }
 }
 
 renderAll();

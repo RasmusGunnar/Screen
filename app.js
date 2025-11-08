@@ -1,8 +1,12 @@
 const INACTIVITY_TIMEOUT = 60000; // 60 sekunder før pauseskærm
-const FIREBASE_CONFIG = window.SUBRA_FIREBASE_CONFIG || null;
-const FIREBASE_COLLECTION = window.SUBRA_KIOSK_COLLECTION || 'kiosks';
-const FIREBASE_DOCUMENT = window.SUBRA_KIOSK_DOCUMENT || 'subra-main';
-const FIREBASE_ASSET_FOLDER = window.SUBRA_ASSET_FOLDER || 'screensaver';
+const SUPABASE_CONFIG = window.SUBRA_SUPABASE_CONFIG || null;
+const KIOSK_STATE_TABLE = SUPABASE_CONFIG?.tables?.kioskState || 'kiosk_state';
+const KIOSK_STATE_ID = SUPABASE_CONFIG?.kiosk?.stateId || 'subra-main';
+const KIOSK_CHANNEL = SUPABASE_CONFIG?.kiosk?.channel || `kiosk-state-${KIOSK_STATE_ID}`;
+const SCREENSAVER_BUCKET = SUPABASE_CONFIG?.storage?.screensaverBucket || 'screensaver';
+const SLIDES_FOLDER = SUPABASE_CONFIG?.storage?.slidesFolder || 'slides';
+const KIOSK_SERVICE_EMAIL = SUPABASE_CONFIG?.kiosk?.serviceEmail || null;
+const KIOSK_SERVICE_PASSWORD = SUPABASE_CONFIG?.kiosk?.servicePassword || null;
 
 const DEFAULTS = window.SUBRA_DEFAULTS || {};
 const seedEmployees = DEFAULTS.employees || [];
@@ -52,10 +56,8 @@ let inactivityTimer;
 let activeModalEmployee = null;
 let screensaverInterval;
 let pendingSlideUploadId = null;
-let firebaseApp = null;
-let firebaseServices = { storage: null, firestore: null };
-let kioskDocRef = null;
-let unsubscribeState = null;
+let supabaseClient = null;
+let realtimeChannel = null;
 let isCloudReady = false;
 let isApplyingRemoteState = false;
 let hasCloudWarning = false;
@@ -117,7 +119,7 @@ async function init() {
   attachEvents();
   renderSlides();
   renderAll();
-  await initializeFirebase();
+  await initializeSupabase();
   restartScreensaverCycle();
   tickClock();
   setInterval(tickClock, 1000);
@@ -140,8 +142,8 @@ function ensureStateDefaults(data = {}) {
 
   const settings = {
     kiosk: {
-      collection: data.settings?.kiosk?.collection || FIREBASE_COLLECTION,
-      document: data.settings?.kiosk?.document || FIREBASE_DOCUMENT,
+      table: data.settings?.kiosk?.table || KIOSK_STATE_TABLE,
+      id: data.settings?.kiosk?.id || KIOSK_STATE_ID,
       lastSynced: data.settings?.kiosk?.lastSynced || null,
     },
   };
@@ -186,7 +188,7 @@ function escapeHtml(value = '') {
     .replace(/'/g, '&#39;');
 }
 
-function serializeForFirestore(data) {
+function serializeForStorage(data) {
   return JSON.parse(
     JSON.stringify(data, (key, value) => {
       if (value === undefined) return null;
@@ -202,9 +204,9 @@ function cloneState(source = state) {
 function commitState(nextState) {
   state = ensureStateDefaults(nextState || state);
 
-  if (!kioskDocRef || !firebaseServices.firestore) {
+  if (!supabaseClient) {
     if (!hasCloudWarning) {
-      appendSyncOutput('Sky-synkronisering er ikke initialiseret. Tjek Firebase-konfigurationen.');
+      appendSyncOutput('Sky-synkronisering er ikke initialiseret. Tjek Supabase-konfigurationen.');
       hasCloudWarning = true;
     }
     return;
@@ -221,20 +223,25 @@ function commitState(nextState) {
   const snapshot = ensureStateDefaults(state);
   snapshot.updatedAt = new Date().toISOString();
   snapshot.settings.kiosk = {
-    collection: FIREBASE_COLLECTION,
-    document: FIREBASE_DOCUMENT,
+    table: KIOSK_STATE_TABLE,
+    id: KIOSK_STATE_ID,
     lastSynced: snapshot.updatedAt,
   };
   state = snapshot;
-  void kioskDocRef
-    .set(serializeForFirestore(snapshot), { merge: false })
-    .then(() => {
+
+  void supabaseClient
+    .from(KIOSK_STATE_TABLE)
+    .upsert({ id: KIOSK_STATE_ID, state: serializeForStorage(snapshot) }, { onConflict: 'id' })
+    .then(({ error }) => {
+      if (error) {
+        throw error;
+      }
       hasCloudWarning = false;
       appendSyncOutput('Skyen er opdateret.');
     })
     .catch((error) => {
       console.error('Kunne ikke gemme state i skyen', error);
-      appendSyncOutput('Kunne ikke gemme til skyen. Kontrollér Firebase-forbindelsen.');
+      appendSyncOutput('Kunne ikke gemme til skyen. Kontrollér Supabase-forbindelsen.');
     });
 }
 
@@ -1083,28 +1090,38 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    if (!firebaseServices.storage) {
-      throw new Error('Firebase Storage er ikke initialiseret.');
+    const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
+    if (!supabaseClient) {
+      throw new Error('Supabase er ikke initialiseret.');
     }
 
-    const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
-    const path = `${FIREBASE_ASSET_FOLDER}/screensaver/${slide.id}-${Date.now()}-${safeName}`;
-    const storageRef = firebaseServices.storage.ref(path);
-    await storageRef.put(file);
-    const url = await storageRef.getDownloadURL();
+    const storagePath = `${SLIDES_FOLDER}/${slide.id}-${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabaseClient.storage
+      .from(SCREENSAVER_BUCKET)
+      .upload(storagePath, file, { upsert: true, contentType: file.type });
+    if (uploadError) {
+      throw uploadError;
+    }
 
-    if (slide.storagePath && slide.storagePath !== path) {
+    const { data: publicData, error: publicError } = supabaseClient.storage
+      .from(SCREENSAVER_BUCKET)
+      .getPublicUrl(storagePath);
+    if (publicError) {
+      throw publicError;
+    }
+
+    if (slide.storagePath && slide.storagePath !== `${SCREENSAVER_BUCKET}:${storagePath}`) {
       await deleteStorageAsset(slide.storagePath);
     }
 
-    slide.image = url;
-    slide.storagePath = path;
+    slide.image = publicData.publicUrl;
+    slide.storagePath = `${SCREENSAVER_BUCKET}:${storagePath}`;
     slide.updatedAt = new Date().toISOString();
 
     renderSlides();
     renderScreensaverAdmin();
     commitState();
-    appendSyncOutput('Opdaterede pauseskærmsbilledet via Firebase Storage.');
+    appendSyncOutput('Opdaterede pauseskærmsbilledet via Supabase Storage.');
   } catch (error) {
     console.error('Fejl ved upload af slide', error);
     appendSyncOutput(`Kunne ikke uploade billede: ${error.message}`);
@@ -1130,96 +1147,169 @@ async function deleteSlide(slideId) {
   }
 }
 
-async function initializeFirebase() {
-  if (typeof firebase === 'undefined') {
-    appendSyncOutput('Firebase SDK kunne ikke indlæses.');
+async function initializeSupabase() {
+  if (typeof window.supabase === 'undefined') {
+    appendSyncOutput('Supabase SDK kunne ikke indlæses.');
     return;
   }
 
-  if (!FIREBASE_CONFIG) {
-    appendSyncOutput('Tilføj dine Firebase-nøgler i firebase-config.js for at aktivere synkronisering.');
+  if (!SUPABASE_CONFIG?.url || !SUPABASE_CONFIG?.anonKey) {
+    appendSyncOutput('Tilføj dine Supabase-nøgler i supabase-config.js for at aktivere synkronisering.');
     return;
   }
 
   try {
-    if (!firebaseApp) {
-      const existing = firebase.apps?.find((app) => app.options?.apiKey === FIREBASE_CONFIG.apiKey);
-      firebaseApp = existing || firebase.initializeApp(FIREBASE_CONFIG);
+    if (!supabaseClient) {
+      supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: true,
+        },
+      });
     }
 
-    firebaseServices.storage = firebase.storage();
-    firebaseServices.firestore = firebase.firestore();
-    kioskDocRef = firebaseServices.firestore.collection(FIREBASE_COLLECTION).doc(FIREBASE_DOCUMENT);
-
+    await ensureServiceSession();
     await ensureCloudState();
     subscribeToCloudState();
     isCloudReady = true;
+    const projectHost = safeSupabaseHost();
     appendSyncOutput(
-      `Forbundet til Firebase-projektet ${FIREBASE_CONFIG.projectId || FIREBASE_DOCUMENT}. Alle ændringer gemmes i skyen.`
+      `Forbundet til Supabase-projektet ${projectHost}. Alle ændringer gemmes i skyen.`
     );
   } catch (error) {
-    console.error('Kunne ikke initialisere Firebase', error);
-    appendSyncOutput('Kunne ikke oprette forbindelse til Firebase. Kontrollér konfigurationen i firebase-config.js.');
-    firebaseServices = { storage: null, firestore: null };
+    console.error('Kunne ikke initialisere Supabase', error);
+    appendSyncOutput('Kunne ikke oprette forbindelse til Supabase. Kontrollér konfigurationen i supabase-config.js.');
+    supabaseClient = null;
+  }
+}
+
+async function ensureServiceSession() {
+  if (!supabaseClient) return;
+  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+  if (sessionError) {
+    console.warn('Kunne ikke hente Supabase-session', sessionError);
+  }
+
+  if (sessionData?.session) {
+    return;
+  }
+
+  if (!KIOSK_SERVICE_EMAIL || !KIOSK_SERVICE_PASSWORD) {
+    appendSyncOutput('Konfigurer service-login i supabase-config.js for at aktivere kiosk-synkronisering.');
+    throw new Error('Mangler Supabase service-login.');
+  }
+
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email: KIOSK_SERVICE_EMAIL,
+    password: KIOSK_SERVICE_PASSWORD,
+  });
+  if (error) {
+    appendSyncOutput('Kunne ikke logge ind med Supabase-servicebrugeren.');
+    throw error;
   }
 }
 
 async function ensureCloudState() {
-  if (!kioskDocRef) return;
+  if (!supabaseClient) return;
   try {
-    const snapshot = await kioskDocRef.get();
-    if (!snapshot.exists) {
+    const { data, error } = await supabaseClient
+      .from(KIOSK_STATE_TABLE)
+      .select('state')
+      .eq('id', KIOSK_STATE_ID)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data || !data.state) {
       const seed = ensureStateDefaults(state);
       seed.updatedAt = new Date().toISOString();
       seed.settings.kiosk = {
-        collection: FIREBASE_COLLECTION,
-        document: FIREBASE_DOCUMENT,
+        table: KIOSK_STATE_TABLE,
+        id: KIOSK_STATE_ID,
         lastSynced: seed.updatedAt,
       };
-      await kioskDocRef.set(serializeForFirestore(seed), { merge: false });
+      const { error: upsertError } = await supabaseClient
+        .from(KIOSK_STATE_TABLE)
+        .upsert({ id: KIOSK_STATE_ID, state: serializeForStorage(seed) }, { onConflict: 'id' });
+      if (upsertError) {
+        throw upsertError;
+      }
       state = seed;
     } else {
-      state = ensureStateDefaults(snapshot.data());
+      state = ensureStateDefaults(data.state);
     }
+
     renderSlides();
     renderAll();
   } catch (error) {
-    console.error('Kunne ikke hente state fra Firestore', error);
+    console.error('Kunne ikke hente state fra Supabase', error);
     appendSyncOutput('Kunne ikke hente data fra skyen. Prøv at genindlæse siden.');
   }
 }
 
 function subscribeToCloudState() {
-  if (!kioskDocRef || !firebaseServices.firestore) return;
-  if (typeof unsubscribeState === 'function') {
-    unsubscribeState();
+  if (!supabaseClient) return;
+  if (realtimeChannel) {
+    void supabaseClient.removeChannel(realtimeChannel);
   }
 
-  unsubscribeState = kioskDocRef.onSnapshot(
-    (doc) => {
-      if (!doc.exists) return;
-      isApplyingRemoteState = true;
-      isCloudReady = true;
-      hasCloudWarning = false;
-      state = ensureStateDefaults(doc.data());
-      renderSlides();
-      renderAll();
-      isApplyingRemoteState = false;
-    },
-    (error) => {
-      console.error('Firestore subscription fejl', error);
-      appendSyncOutput('Forbindelsen til Firebase blev afbrudt. Ændringer gemmes igen når forbindelsen er tilbage.');
-      isCloudReady = false;
-    }
-  );
+  realtimeChannel = supabaseClient
+    .channel(KIOSK_CHANNEL)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: KIOSK_STATE_TABLE, filter: `id=eq.${KIOSK_STATE_ID}` },
+      (payload) => {
+        if (!payload.new?.state) return;
+        if (isApplyingRemoteState) return;
+        isApplyingRemoteState = true;
+        isCloudReady = true;
+        hasCloudWarning = false;
+        state = ensureStateDefaults(payload.new.state);
+        renderSlides();
+        renderAll();
+        isApplyingRemoteState = false;
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        isCloudReady = true;
+        hasCloudWarning = false;
+      }
+    });
 }
 
 async function deleteStorageAsset(path) {
-  if (!firebaseServices.storage || !path) return;
+  if (!supabaseClient || !path) return;
+  const { bucket, objectPath } = parseStoragePath(path);
+  if (!bucket || !objectPath) return;
+  const { error } = await supabaseClient.storage.from(bucket).remove([objectPath]);
+  if (error) {
+    console.warn('Kunne ikke slette fil i Supabase Storage', error);
+  }
+}
+
+function parseStoragePath(path) {
+  if (!path) {
+    return { bucket: null, objectPath: null };
+  }
+
+  if (path.includes(':')) {
+    const [bucket, ...rest] = path.split(':');
+    return { bucket, objectPath: rest.join(':').replace(/^\/+/, '') };
+  }
+
+  return { bucket: SCREENSAVER_BUCKET, objectPath: path.replace(/^\/+/, '') };
+}
+
+function safeSupabaseHost() {
+  if (!SUPABASE_CONFIG?.url) return 'supabase';
   try {
-    await firebaseServices.storage.ref(path).delete();
+    return new URL(SUPABASE_CONFIG.url).hostname;
   } catch (error) {
-    console.warn('Kunne ikke slette fil i Firebase Storage', error);
+    console.warn('Ugyldigt Supabase-URL i konfigurationen', error);
+    return SUPABASE_CONFIG.url;
   }
 }
 
