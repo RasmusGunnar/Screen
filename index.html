@@ -59,37 +59,25 @@
       </header>
 
       <section class="status-summary" id="status-summary">
-        <div class="summary-card">
+        <button type="button" class="summary-card" data-summary-target="onsite">
           <span class="summary-label">På kontoret</span>
           <span class="summary-value" data-summary="onsite">0</span>
-        </div>
-        <div class="summary-card">
-          <span class="summary-label">Arbejde hjemmefra</span>
+        </button>
+        <button type="button" class="summary-card" data-summary-target="remote">
+          <span class="summary-label">Arbejder hjemmefra</span>
           <span class="summary-value" data-summary="remote">0</span>
-        </div>
-        <div class="summary-card">
+        </button>
+        <button type="button" class="summary-card" data-summary-target="away">
           <span class="summary-label">Fravær</span>
           <span class="summary-value" data-summary="away">0</span>
-        </div>
-        <div class="summary-card">
+        </button>
+        <button type="button" class="summary-card" data-summary-target="guests">
           <span class="summary-label">Gæster registreret i dag</span>
           <span class="summary-value" data-summary="guests">0</span>
-        </div>
+        </button>
       </section>
 
       <section class="interaction-panel">
-        <div class="checkin-card">
-          <h2>Registrer ankomst eller afgang</h2>
-          <div class="input-row">
-            <label for="employee-search">Søg medarbejder</label>
-            <input type="search" id="employee-search" placeholder="Søg efter navn eller afdeling" />
-          </div>
-          <div class="quick-actions">
-            <button class="primary" data-quick="checkin">Tjek alle ind (brandøvelse)</button>
-            <button class="ghost" data-quick="checkout">Tøm bygningen</button>
-            <button class="ghost" data-quick="rollcall">Evakueringsliste</button>
-          </div>
-        </div>
         <div class="guest-card">
           <h2>Registrering af gæster</h2>
           <form id="guest-form">
@@ -113,7 +101,10 @@
               <legend>Politikker</legend>
               <label class="checkbox">
                 <input type="checkbox" id="guest-nda" required />
-                Jeg har læst og accepterer SUBRAs NDA.
+                Jeg har læst og accepterer
+                <a id="guest-nda-link" class="policy-link" href="#" target="_blank" rel="noopener"
+                  >SUBRAs NDA</a
+                >.
               </label>
               <label class="checkbox">
                 <input type="checkbox" id="guest-it" required />
@@ -127,8 +118,8 @@
         </div>
         <div class="self-service-card">
           <h2>Hurtig selvbetjening</h2>
-          <p>Scan en QR-kode for at registrere dig fra din egen telefon.</p>
-          <div class="qr-grid">
+          <p>Scan QR-koden for at åbne medarbejdersiden på din egen telefon.</p>
+          <div class="qr-grid single">
             <figure>
               <div id="employee-qr" class="qr-canvas" role="img" aria-label="QR-kode for medarbejdere"></div>
               <figcaption>
@@ -136,21 +127,22 @@
                 <small id="employee-qr-link" class="qr-link"></small>
               </figcaption>
             </figure>
-            <figure>
-              <div id="guest-qr" class="qr-canvas" role="img" aria-label="QR-kode for gæster"></div>
-              <figcaption>
-                Gæsteregistrering
-                <small id="guest-qr-link" class="qr-link"></small>
-              </figcaption>
-            </figure>
           </div>
           <p class="qr-hint">
-            QR-koderne opdateres automatisk når du ændrer links i adminportalen eller synkroniserer via Firebase.
+            QR-koden opdateres automatisk når du ændrer linket i adminportalen eller synkroniserer via Firebase.
           </p>
         </div>
       </section>
 
       <section class="departments" id="departments"></section>
+
+      <section class="quick-actions-bar" aria-label="Hurtige handlinger">
+        <div class="quick-actions">
+          <button class="primary" data-quick="checkin">Tjek alle ind (brandøvelse)</button>
+          <button class="ghost" data-quick="checkout">Tøm bygningen</button>
+          <button class="ghost" data-quick="rollcall">Evakueringsliste</button>
+        </div>
+      </section>
 
       <section class="feature-highlight">
         <h2>Udvidelser inspireret af Swipedon</h2>
@@ -200,32 +192,12 @@
     </div>
   </div>
 
-  <div
-    id="policy-modal"
-    class="modal hidden"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="policy-modal-title"
-    aria-hidden="true"
-  >
-    <div class="modal-content policy-modal">
-      <button class="modal-close" aria-label="Luk" id="policy-close">&times;</button>
-      <h2 id="policy-modal-title">Bekræft politikker</h2>
-      <p class="policy-intro">Før <span id="policy-employee"></span> kan tjekke ind, skal følgende politikker accepteres.</p>
-      <form id="policy-form">
-        <label class="checkbox">
-          <input type="checkbox" id="policy-nda" required />
-          Jeg har læst og accepteret SUBRAs fortroligheds- og NDA-politik.
-        </label>
-        <label class="checkbox">
-          <input type="checkbox" id="policy-it" required />
-          Jeg bekræfter, at jeg følger virksomhedens IT- og datasikkerhedspolitik.
-        </label>
-        <div class="policy-actions">
-          <button type="button" class="ghost" id="policy-cancel">Annuller</button>
-          <button type="submit" class="primary">Accepter &amp; tjek ind</button>
-        </div>
-      </form>
+
+  <div id="summary-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="summary-title">
+    <div class="modal-content summary-modal">
+      <button class="modal-close" aria-label="Luk" id="summary-close">&times;</button>
+      <h2 id="summary-title">Detaljer</h2>
+      <div id="summary-list" class="summary-list"></div>
     </div>
   </div>
 

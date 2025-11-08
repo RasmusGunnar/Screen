@@ -8,6 +8,7 @@ const DEFAULTS = window.SUBRA_DEFAULTS || {};
 const seedEmployees = DEFAULTS.employees || [];
 const defaultSlides = DEFAULTS.slides || [];
 const DEFAULT_QR_LINKS = DEFAULTS.qrLinks || { employee: '', guest: '' };
+const DEFAULT_POLICY_LINKS = DEFAULTS.policyLinks || { nda: '' };
 
 const SLIDE_THEMES = [
   { value: 'fjord', label: 'Fjord · kølig blå' },
@@ -17,11 +18,23 @@ const SLIDE_THEMES = [
   { value: 'forest', label: 'Forest · nordisk grøn' },
 ];
 
+const SUMMARY_LABELS = {
+  onsite: 'På kontoret i dag',
+  remote: 'Arbejder hjemmefra',
+  away: 'Registreret fravær',
+  guests: 'Dagens gæster',
+};
+
+const SUMMARY_EMPTY_MESSAGES = {
+  onsite: 'Der er ingen medarbejdere registreret på kontoret lige nu.',
+  remote: 'Ingen medarbejdere er registreret som hjemmearbejde.',
+  away: 'Der er ikke registreret fravær i dag.',
+  guests: 'Ingen gæster er registreret endnu i dag.',
+};
+
 let state = ensureStateDefaults();
 let inactivityTimer;
 let activeModalEmployee = null;
-let activePolicyEmployee = null;
-let pendingPolicyAction = null;
 let screensaverInterval;
 let pendingSlideUploadId = null;
 let firebaseApp = null;
@@ -38,10 +51,12 @@ const elements = {
   main: document.getElementById('main-app'),
   departments: document.getElementById('departments'),
   search: document.getElementById('employee-search'),
+  summaryCards: document.querySelectorAll('[data-summary-target]'),
   summaryValues: document.querySelectorAll('[data-summary]'),
   guestForm: document.getElementById('guest-form'),
   guestHost: document.getElementById('guest-host'),
   guestLog: document.getElementById('guest-log'),
+  guestNdaLink: document.getElementById('guest-nda-link'),
   statusModal: document.getElementById('status-modal'),
   modalClose: document.getElementById('modal-close'),
   modalEmployee: document.getElementById('modal-employee'),
@@ -68,23 +83,17 @@ const elements = {
   importFile: document.getElementById('import-file'),
   syncOutput: document.getElementById('sync-output'),
   liveClock: document.getElementById('live-clock'),
-  policyModal: document.getElementById('policy-modal'),
-  policyForm: document.getElementById('policy-form'),
-  policyEmployee: document.getElementById('policy-employee'),
-  policyNda: document.getElementById('policy-nda'),
-  policyIt: document.getElementById('policy-it'),
-  policyCancel: document.getElementById('policy-cancel'),
-  policyClose: document.getElementById('policy-close'),
   screensaverAdmin: document.getElementById('screensaver-admin'),
   addSlide: document.getElementById('add-slide'),
   slideUpload: document.getElementById('slide-upload'),
   qrForm: document.getElementById('qr-form'),
   qrEmployee: document.getElementById('qr-employee'),
-  qrGuest: document.getElementById('qr-guest'),
   employeeQrCanvas: document.getElementById('employee-qr'),
-  guestQrCanvas: document.getElementById('guest-qr'),
   employeeQrLink: document.getElementById('employee-qr-link'),
-  guestQrLink: document.getElementById('guest-qr-link'),
+  summaryModal: document.getElementById('summary-modal'),
+  summaryClose: document.getElementById('summary-close'),
+  summaryTitle: document.getElementById('summary-title'),
+  summaryList: document.getElementById('summary-list'),
 };
 
 init();
@@ -110,6 +119,10 @@ function ensureStateDefaults(data = {}) {
     guest: (data.qrLinks?.guest || DEFAULT_QR_LINKS.guest).trim(),
   };
 
+  const policyLinks = {
+    nda: (data.policyLinks?.nda || DEFAULT_POLICY_LINKS.nda).trim(),
+  };
+
   const settings = {
     kiosk: {
       collection: data.settings?.kiosk?.collection || FIREBASE_COLLECTION,
@@ -122,11 +135,11 @@ function ensureStateDefaults(data = {}) {
     employees,
     guests: data.guests || [],
     logs: data.logs || [],
-    policyAcknowledgements: data.policyAcknowledgements || {},
     screensaver: {
       slides: normalizeSlides(data.screensaver?.slides || data.slides || defaultSlides),
     },
     qrLinks,
+    policyLinks,
     settings,
     updatedAt: data.updatedAt || null,
   };
@@ -220,7 +233,20 @@ function attachEvents() {
   document.addEventListener('touchstart', resetInactivityTimer, { passive: true });
   document.addEventListener('mousemove', resetInactivityTimer, { passive: true });
 
-  elements.search?.addEventListener('input', () => renderDepartments(elements.search.value));
+  elements.search?.addEventListener('input', (event) => renderDepartments(event.target.value));
+
+  elements.summaryCards?.forEach((card) =>
+    card.addEventListener('click', () => openSummaryModal(card.dataset.summaryTarget))
+  );
+  elements.summaryClose?.addEventListener('click', closeSummaryModal);
+  elements.summaryModal?.addEventListener('click', (event) => {
+    if (event.target === elements.summaryModal) {
+      closeSummaryModal();
+    }
+  });
+  if (elements.summaryModal) {
+    document.addEventListener('keydown', handleSummaryKeydown);
+  }
 
   elements.departments?.addEventListener('click', handleDepartmentClick);
 
@@ -247,10 +273,6 @@ function attachEvents() {
   document.querySelectorAll('[data-quick]').forEach((button) =>
     button.addEventListener('click', handleQuickAction)
   );
-
-  elements.policyForm?.addEventListener('submit', handlePolicySubmit);
-  elements.policyCancel?.addEventListener('click', closePolicyModal);
-  elements.policyClose?.addEventListener('click', closePolicyModal);
 
   elements.screensaverAdmin?.addEventListener('input', handleSlideFieldChange);
   elements.screensaverAdmin?.addEventListener('click', handleSlideAdminClick);
@@ -315,13 +337,17 @@ function renderSlides() {
 }
 
 function renderAll() {
-  renderDepartments(elements.search.value);
+  renderDepartments(elements.search?.value || '');
   renderSummary();
   populateGuestHost();
   renderGuestLog();
   renderEmployeeAdminList();
   renderScreensaverAdmin();
   updateQrCodes();
+  updateGuestPolicyLink();
+  if (!elements.summaryModal?.classList.contains('hidden')) {
+    renderSummaryDetails(elements.summaryModal.dataset.summaryType);
+  }
 }
 
 function renderDepartments(filter = '') {
@@ -482,11 +508,7 @@ function handleDepartmentClick(event) {
   if (!employee) return;
 
   if (action === 'checkin') {
-    if (!hasAcceptedPolicies(employee.id)) {
-      openPolicyModal(employee, () => updateEmployeeStatus(employee.id, 'onsite', 'Ankommet'));
-    } else {
-      updateEmployeeStatus(employee.id, 'onsite', 'Ankommet');
-    }
+    updateEmployeeStatus(employee.id, 'onsite', 'Ankommet');
   }
 
   if (action === 'checkout') {
@@ -496,66 +518,6 @@ function handleDepartmentClick(event) {
   if (action === 'status') {
     openStatusModal(employee);
   }
-}
-
-function hasAcceptedPolicies(employeeId) {
-  const record = state.policyAcknowledgements?.[employeeId];
-  return Boolean(record?.nda && record?.it);
-}
-
-function openPolicyModal(employee, onAccept) {
-  activePolicyEmployee = employee;
-  pendingPolicyAction = onAccept;
-  if (elements.policyEmployee) {
-    elements.policyEmployee.textContent = `${employee.firstName} ${employee.lastName}`;
-  }
-  if (elements.policyForm) {
-    elements.policyForm.reset();
-  }
-  if (elements.policyModal) {
-    elements.policyModal.classList.remove('hidden');
-    elements.policyModal.setAttribute('aria-hidden', 'false');
-  }
-  if (elements.policyNda) {
-    setTimeout(() => elements.policyNda.focus(), 0);
-  }
-}
-
-function closePolicyModal() {
-  if (elements.policyModal) {
-    elements.policyModal.classList.add('hidden');
-    elements.policyModal.setAttribute('aria-hidden', 'true');
-  }
-  if (elements.policyForm) {
-    elements.policyForm.reset();
-  }
-  activePolicyEmployee = null;
-  pendingPolicyAction = null;
-}
-
-function handlePolicySubmit(event) {
-  event.preventDefault();
-  if (!activePolicyEmployee || typeof pendingPolicyAction !== 'function') {
-    closePolicyModal();
-    return;
-  }
-
-  if (!elements.policyNda?.checked || !elements.policyIt?.checked) {
-    alert('Accepter begge politikker for at fortsætte.');
-    return;
-  }
-
-  state.policyAcknowledgements = state.policyAcknowledgements || {};
-  state.policyAcknowledgements[activePolicyEmployee.id] = {
-    nda: true,
-    it: true,
-    timestamp: new Date().toISOString(),
-  };
-
-  const action = pendingPolicyAction;
-  closePolicyModal();
-  commitState();
-  action();
 }
 
 function updateEmployeeStatus(id, status, note = '') {
@@ -647,6 +609,89 @@ function renderSummary() {
   });
 }
 
+function openSummaryModal(type) {
+  if (!elements.summaryModal || !elements.summaryList) return;
+  const summaryType = type || 'onsite';
+  elements.summaryModal.dataset.summaryType = summaryType;
+
+  if (elements.summaryTitle) {
+    elements.summaryTitle.textContent = SUMMARY_LABELS[summaryType] || 'Detaljer';
+  }
+
+  renderSummaryDetails(summaryType);
+
+  elements.summaryModal.classList.remove('hidden');
+  elements.summaryModal.setAttribute('aria-hidden', 'false');
+  setTimeout(() => elements.summaryClose?.focus(), 0);
+}
+
+function closeSummaryModal() {
+  if (!elements.summaryModal) return;
+  elements.summaryModal.classList.add('hidden');
+  elements.summaryModal.setAttribute('aria-hidden', 'true');
+  delete elements.summaryModal.dataset.summaryType;
+}
+
+function handleSummaryKeydown(event) {
+  if (event.key !== 'Escape') return;
+  if (elements.summaryModal?.classList.contains('hidden')) return;
+  closeSummaryModal();
+}
+
+function renderSummaryDetails(type) {
+  if (!elements.summaryList) return;
+  elements.summaryList.innerHTML = '';
+
+  if (type === 'guests') {
+    const todayGuests = state.guests.filter((guest) => isToday(guest.timestamp));
+    if (!todayGuests.length) {
+      elements.summaryList.innerHTML = `<p class="summary-empty">${SUMMARY_EMPTY_MESSAGES.guests}</p>`;
+      return;
+    }
+
+    todayGuests.forEach((guest) => {
+      const host = state.employees.find((emp) => emp.id === guest.hostId);
+      const entry = document.createElement('article');
+      entry.className = 'summary-entry';
+      const time = new Date(guest.timestamp).toLocaleTimeString('da-DK', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      entry.innerHTML = `
+        <strong>${escapeHtml(guest.name)}${guest.company ? ` · ${escapeHtml(guest.company)}` : ''}</strong>
+        <span>${host ? `${escapeHtml(host.firstName)} ${escapeHtml(host.lastName)}` : 'Ukendt vært'}</span>
+        <small>${time}${guest.purpose ? ` · ${escapeHtml(guest.purpose)}` : ''}</small>
+      `;
+      elements.summaryList.appendChild(entry);
+    });
+    return;
+  }
+
+  const employees = state.employees
+    .filter((employee) => employee.status === type)
+    .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'da', {
+      sensitivity: 'base',
+    }));
+
+  if (!employees.length) {
+    elements.summaryList.innerHTML = `<p class="summary-empty">${
+      SUMMARY_EMPTY_MESSAGES[type] || 'Ingen registreringer endnu.'
+    }</p>`;
+    return;
+  }
+
+  employees.forEach((employee) => {
+    const entry = document.createElement('article');
+    entry.className = 'summary-entry';
+    entry.innerHTML = `
+      <strong>${escapeHtml(employee.firstName)} ${escapeHtml(employee.lastName)}</strong>
+      <span>${escapeHtml(employee.department)}${employee.role ? ` · ${escapeHtml(employee.role)}` : ''}</span>
+      <small>${escapeHtml(formatStatusText(employee))}</small>
+    `;
+    elements.summaryList.appendChild(entry);
+  });
+}
+
 function populateGuestHost() {
   const select = elements.guestHost;
   select.innerHTML = '';
@@ -716,6 +761,26 @@ function renderGuestLog() {
   });
 }
 
+function updateGuestPolicyLink() {
+  if (!elements.guestNdaLink) return;
+  const link = elements.guestNdaLink;
+  const url = state.policyLinks?.nda || '';
+
+  if (url) {
+    link.href = url;
+    link.classList.remove('disabled');
+    link.textContent = 'SUBRAs NDA (PDF)';
+    link.removeAttribute('aria-disabled');
+    link.tabIndex = 0;
+  } else {
+    link.removeAttribute('href');
+    link.classList.add('disabled');
+    link.textContent = 'SUBRAs NDA (link mangler)';
+    link.setAttribute('aria-disabled', 'true');
+    link.tabIndex = -1;
+  }
+}
+
 function notifyHost(guest) {
   const host = state.employees.find((emp) => emp.id === guest.hostId);
   const message = host
@@ -783,23 +848,12 @@ function renderEmployeeAdminList() {
       const item = document.createElement('div');
       item.className = 'drawer-item';
       const info = document.createElement('div');
-      const policyRecord = state.policyAcknowledgements?.[employee.id];
-      const acceptedDate = policyRecord?.timestamp
-        ? new Date(policyRecord.timestamp).toLocaleDateString('da-DK')
-        : null;
-      const policyLabel = acceptedDate ? `Politikker accepteret ${acceptedDate}` : 'Manglende politik-godkendelse';
       info.innerHTML = `
         <strong>${employee.firstName} ${employee.lastName}</strong>
         <small>${employee.department} · ${employee.role || 'Ingen titel'}</small>
-        <small class="policy-state">${policyLabel}</small>
       `;
 
       const actions = document.createElement('div');
-
-      const resetPolicyButton = document.createElement('button');
-      resetPolicyButton.innerHTML = '📄';
-      resetPolicyButton.title = 'Nulstil politik-godkendelser';
-      resetPolicyButton.addEventListener('click', () => resetPolicyAcknowledgement(employee.id));
 
       const editButton = document.createElement('button');
       editButton.innerHTML = '✏️';
@@ -809,7 +863,7 @@ function renderEmployeeAdminList() {
       deleteButton.innerHTML = '🗑️';
       deleteButton.addEventListener('click', () => deleteEmployee(employee.id));
 
-      actions.append(resetPolicyButton, editButton, deleteButton);
+      actions.append(editButton, deleteButton);
 
       item.append(info, actions);
       container.appendChild(item);
@@ -859,18 +913,13 @@ function renderScreensaverAdmin() {
 }
 
 function updateQrCodes() {
-  if (!elements.employeeQrCanvas || !elements.guestQrCanvas) return;
+  if (!elements.employeeQrCanvas) return;
   renderQrCode(elements.employeeQrCanvas, state.qrLinks.employee, 'Medarbejder QR-kode');
-  renderQrCode(elements.guestQrCanvas, state.qrLinks.guest, 'Gæste QR-kode');
 
   if (elements.employeeQrLink) {
     elements.employeeQrLink.textContent = state.qrLinks.employee ? `→ ${state.qrLinks.employee}` : '';
   }
-  if (elements.guestQrLink) {
-    elements.guestQrLink.textContent = state.qrLinks.guest ? `→ ${state.qrLinks.guest}` : '';
-  }
   if (elements.qrEmployee) elements.qrEmployee.value = state.qrLinks.employee || '';
-  if (elements.qrGuest) elements.qrGuest.value = state.qrLinks.guest || '';
 }
 
 function renderQrCode(container, url, ariaLabel) {
@@ -1142,7 +1191,6 @@ async function deleteStorageAsset(path) {
 async function handleQrSubmit(event) {
   event.preventDefault();
   state.qrLinks.employee = elements.qrEmployee?.value.trim() || '';
-  state.qrLinks.guest = elements.qrGuest?.value.trim() || '';
   updateQrCodes();
   commitState();
   appendSyncOutput('Opdaterede QR-links.');
@@ -1160,26 +1208,9 @@ function populateEmployeeForm(employee) {
 
 function deleteEmployee(id) {
   state.employees = state.employees.filter((emp) => emp.id !== id);
-  if (state.policyAcknowledgements?.[id]) {
-    delete state.policyAcknowledgements[id];
-  }
   appendSyncOutput(`Fjernede medarbejder: ${id}`);
   renderAll();
   commitState();
-}
-
-function resetPolicyAcknowledgement(id) {
-  if (state.policyAcknowledgements?.[id]) {
-    delete state.policyAcknowledgements[id];
-    const employee = state.employees.find((emp) => emp.id === id);
-    appendSyncOutput(
-      `Politik-godkendelser nulstillet for ${employee ? `${employee.firstName} ${employee.lastName}` : id}.`
-    );
-    renderAll();
-    commitState();
-  } else {
-    appendSyncOutput('Ingen politik-godkendelser at nulstille.');
-  }
 }
 
 function logEvent(entry) {

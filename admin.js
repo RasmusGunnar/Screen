@@ -63,9 +63,10 @@ const elements = {
   slideUpload: document.getElementById('slide-upload'),
   qrForm: document.getElementById('qr-form'),
   qrEmployee: document.getElementById('qr-employee'),
-  qrGuest: document.getElementById('qr-guest'),
   qrEmployeeLink: document.getElementById('qr-employee-link'),
-  qrGuestLink: document.getElementById('qr-guest-link'),
+  policyForm: document.getElementById('policy-form'),
+  policyNdaLink: document.getElementById('policy-nda-link'),
+  policyFeedback: document.getElementById('policy-feedback'),
 };
 
 initializeAdmin();
@@ -92,6 +93,7 @@ function initializeAdmin() {
   elements.addSlide?.addEventListener('click', handleAddSlide);
   elements.slideUpload?.addEventListener('change', handleSlideUploadChange);
   elements.qrForm?.addEventListener('submit', handleQrSubmit);
+  elements.policyForm?.addEventListener('submit', handlePolicySubmit);
 
   restoreSession();
 }
@@ -105,7 +107,10 @@ function ensureStateDefaults(data = {}) {
 
   const qrLinks = {
     employee: (data.qrLinks?.employee || (DEFAULTS.qrLinks?.employee || '')).trim(),
-    guest: (data.qrLinks?.guest || (DEFAULTS.qrLinks?.guest || '')).trim(),
+  };
+
+  const policyLinks = {
+    nda: (data.policyLinks?.nda || (DEFAULTS.policyLinks?.nda || '')).trim(),
   };
 
   const settings = {
@@ -120,11 +125,11 @@ function ensureStateDefaults(data = {}) {
     employees,
     guests: data.guests || [],
     logs: data.logs || [],
-    policyAcknowledgements: data.policyAcknowledgements || {},
     screensaver: {
       slides: normalizeSlides(data.screensaver?.slides || data.slides || DEFAULTS.slides || []),
     },
     qrLinks,
+    policyLinks,
     settings,
     updatedAt: data.updatedAt || null,
   };
@@ -365,6 +370,7 @@ function renderAll() {
   renderAbsenceList();
   renderScreensaverAdmin();
   renderQrPreview();
+  renderPolicySettings();
 }
 
 function renderStats() {
@@ -518,12 +524,6 @@ function renderEmployeeList() {
       const actions = document.createElement('div');
       actions.className = 'list-actions';
 
-      const resetPolicy = document.createElement('button');
-      resetPolicy.type = 'button';
-      resetPolicy.textContent = 'Politikker';
-      resetPolicy.title = 'Nulstil NDA/IT-godkendelse';
-      resetPolicy.addEventListener('click', () => resetPolicyAcknowledgement(employee.id));
-
       const edit = document.createElement('button');
       edit.type = 'button';
       edit.textContent = 'Redigér';
@@ -534,7 +534,7 @@ function renderEmployeeList() {
       remove.textContent = 'Slet';
       remove.addEventListener('click', () => deleteEmployee(employee.id));
 
-      actions.append(resetPolicy, edit, remove);
+      actions.append(edit, remove);
       item.append(info, actions);
       elements.employeeList.appendChild(item);
     });
@@ -613,10 +613,14 @@ function renderScreensaverAdmin() {
 
 function renderQrPreview() {
   if (elements.qrEmployee) elements.qrEmployee.value = state.qrLinks.employee || '';
-  if (elements.qrGuest) elements.qrGuest.value = state.qrLinks.guest || '';
   if (elements.qrEmployeeLink)
     elements.qrEmployeeLink.textContent = state.qrLinks.employee || 'Ingen URL angivet';
-  if (elements.qrGuestLink) elements.qrGuestLink.textContent = state.qrLinks.guest || 'Ingen URL angivet';
+}
+
+function renderPolicySettings() {
+  if (elements.policyNdaLink) {
+    elements.policyNdaLink.value = state.policyLinks?.nda || '';
+  }
 }
 
 function handleEmployeeSubmit(event) {
@@ -678,22 +682,9 @@ function populateEmployeeForm(employee) {
 
 function deleteEmployee(id) {
   state.employees = state.employees.filter((emp) => emp.id !== id);
-  if (state.policyAcknowledgements?.[id]) {
-    delete state.policyAcknowledgements[id];
-  }
   appendSyncLog(`Fjernede medarbejder ${id}.`);
   renderAll();
   commitState();
-}
-
-function resetPolicyAcknowledgement(id) {
-  if (state.policyAcknowledgements?.[id]) {
-    delete state.policyAcknowledgements[id];
-    appendSyncLog(`Nulstillede politikker for ${id}.`);
-    commitState();
-  } else {
-    appendSyncLog('Ingen politik-godkendelser registreret for denne medarbejder.');
-  }
 }
 
 function handleSlideFieldChange(event) {
@@ -828,10 +819,22 @@ async function deleteStorageAsset(path) {
 function handleQrSubmit(event) {
   event.preventDefault();
   state.qrLinks.employee = elements.qrEmployee?.value.trim() || '';
-  state.qrLinks.guest = elements.qrGuest?.value.trim() || '';
   renderQrPreview();
   commitState();
-  appendSyncLog('Opdaterede QR-links.');
+  appendSyncLog('Opdaterede link til medarbejder-QR.');
+}
+
+function handlePolicySubmit(event) {
+  event.preventDefault();
+  const value = elements.policyNdaLink?.value.trim() || '';
+  state.policyLinks = state.policyLinks || {};
+  state.policyLinks.nda = value;
+  renderPolicySettings();
+  commitState();
+  if (elements.policyFeedback) {
+    elements.policyFeedback.textContent = value ? 'NDA-link opdateret.' : 'NDA-link fjernet.';
+  }
+  appendSyncLog('Opdaterede NDA-link.');
 }
 
 function handleExportSubmit(event) {
