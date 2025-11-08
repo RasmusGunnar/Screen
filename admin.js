@@ -37,6 +37,9 @@ let isApplyingRemoteState = false;
 let pendingSlideUploadId = null;
 let activeAdmin = null;
 const ADMIN_SESSION_KEY = 'subra-admin-session';
+let supabaseSdkTimer = null;
+const SUPABASE_SDK_MAX_ATTEMPTS = 50;
+const SUPABASE_SDK_POLL_INTERVAL = 200;
 
 const elements = {
   loginView: document.getElementById('login-view'),
@@ -218,8 +221,13 @@ async function handleLoginSubmit(event) {
   event.preventDefault();
   elements.loginError.textContent = '';
 
-  if (!ensureSupabaseClient()) {
-    elements.loginError.textContent = 'Konfigurer Supabase-oplysninger i supabase-config.js.';
+  const clientStatus = ensureSupabaseClient();
+  if (!clientStatus.ok) {
+    if (clientStatus.reason === 'missing-config') {
+      elements.loginError.textContent = 'Konfigurer Supabase-oplysninger i supabase-config.js.';
+    } else {
+      elements.loginError.textContent = 'Supabase indlæses – prøv igen om et øjeblik.';
+    }
     return;
   }
 
@@ -241,7 +249,8 @@ async function handleLoginSubmit(event) {
 }
 
 async function restoreSession() {
-  if (!ensureSupabaseClient()) {
+  const clientStatus = ensureSupabaseClient();
+  if (!clientStatus.ok) {
     showLogin();
     return;
   }
@@ -265,7 +274,8 @@ async function restoreSession() {
 }
 
 async function handleSupabaseLogin(user) {
-  if (!ensureSupabaseClient()) return;
+  const clientStatus = ensureSupabaseClient();
+  if (!clientStatus.ok) return;
 
   try {
     activeAdmin = await fetchAdminProfile(user);
@@ -284,13 +294,14 @@ async function handleSupabaseLogin(user) {
 }
 
 function ensureSupabaseClient() {
-  if (typeof window.supabase === 'undefined') {
-    console.warn('Supabase SDK er ikke indlæst.');
-    return false;
+  if (!SUPABASE_CONFIG?.url || !SUPABASE_CONFIG?.anonKey) {
+    return { ok: false, reason: 'missing-config' };
   }
 
-  if (!SUPABASE_CONFIG?.url || !SUPABASE_CONFIG?.anonKey) {
-    return false;
+  if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+    scheduleSupabaseBootstrap();
+    console.warn('Supabase SDK er ikke indlæst.');
+    return { ok: false, reason: 'sdk-not-ready' };
   }
 
   if (!supabaseClient) {
@@ -302,7 +313,33 @@ function ensureSupabaseClient() {
     });
   }
 
-  return true;
+  return { ok: true };
+}
+
+function scheduleSupabaseBootstrap() {
+  if (supabaseSdkTimer || typeof window === 'undefined') return;
+
+  let attempts = 0;
+  supabaseSdkTimer = window.setInterval(() => {
+    attempts += 1;
+
+    if (window.supabase && typeof window.supabase.createClient === 'function') {
+      window.clearInterval(supabaseSdkTimer);
+      supabaseSdkTimer = null;
+
+      const status = ensureSupabaseClient();
+      if (status.ok) {
+        restoreSession();
+      }
+      return;
+    }
+
+    if (attempts >= SUPABASE_SDK_MAX_ATTEMPTS) {
+      window.clearInterval(supabaseSdkTimer);
+      supabaseSdkTimer = null;
+      console.error('Supabase SDK blev ikke indlæst inden for timeout.');
+    }
+  }, SUPABASE_SDK_POLL_INTERVAL);
 }
 
 function showLogin() {
