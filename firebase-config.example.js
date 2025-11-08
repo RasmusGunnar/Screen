@@ -1,3 +1,4 @@
+// Legacy eksempel til Firebase (Supabase er den aktive backend i projektet).
 window.SUBRA_FIREBASE_CONFIG = {
   apiKey: "YOUR_FIREBASE_API_KEY",
   authDomain: "YOUR_PROJECT.firebaseapp.com",
