@@ -1,12 +1,14 @@
-const SUPABASE_CONFIG = window.SUBRA_SUPABASE_CONFIG || null;
+let SUPABASE_CONFIG = null;
+let ADMIN_HINT = '';
+let KIOSK_STATE_TABLE = 'kiosk_state';
+let KIOSK_STATE_ID = 'subra-main';
+let KIOSK_CHANNEL = `kiosk-state-${KIOSK_STATE_ID}`;
+let SCREENSAVER_BUCKET = 'screensaver';
+let SLIDES_FOLDER = 'slides';
+let ADMIN_TABLE = 'admins';
+
 const DEFAULTS = window.SUBRA_DEFAULTS || {};
-const ADMIN_HINT = SUPABASE_CONFIG?.admin?.hint || '';
-const KIOSK_STATE_TABLE = SUPABASE_CONFIG?.tables?.kioskState || 'kiosk_state';
-const KIOSK_STATE_ID = SUPABASE_CONFIG?.kiosk?.stateId || 'subra-main';
-const KIOSK_CHANNEL = SUPABASE_CONFIG?.kiosk?.channel || `kiosk-state-${KIOSK_STATE_ID}`;
-const SCREENSAVER_BUCKET = SUPABASE_CONFIG?.storage?.screensaverBucket || 'screensaver';
-const SLIDES_FOLDER = SUPABASE_CONFIG?.storage?.slidesFolder || 'slides';
-const ADMIN_TABLE = SUPABASE_CONFIG?.tables?.admins || 'admins';
+applySupabaseConfig(window.SUBRA_SUPABASE_CONFIG || null);
 const SLIDE_THEMES = [
   { value: 'fjord', label: 'Fjord · kølig blå' },
   { value: 'aurora', label: 'Aurora · grøn gradient' },
@@ -14,6 +16,18 @@ const SLIDE_THEMES = [
   { value: 'sand', label: 'Sand · varm neutral' },
   { value: 'forest', label: 'Forest · nordisk grøn' },
 ];
+
+function applySupabaseConfig(config) {
+  SUPABASE_CONFIG = config || null;
+  ADMIN_HINT = SUPABASE_CONFIG?.admin?.hint || '';
+  KIOSK_STATE_TABLE = SUPABASE_CONFIG?.tables?.kioskState || 'kiosk_state';
+  KIOSK_STATE_ID = SUPABASE_CONFIG?.kiosk?.stateId || 'subra-main';
+  KIOSK_CHANNEL =
+    SUPABASE_CONFIG?.kiosk?.channel || `kiosk-state-${KIOSK_STATE_ID}`;
+  SCREENSAVER_BUCKET = SUPABASE_CONFIG?.storage?.screensaverBucket || 'screensaver';
+  SLIDES_FOLDER = SUPABASE_CONFIG?.storage?.slidesFolder || 'slides';
+  ADMIN_TABLE = SUPABASE_CONFIG?.tables?.admins || 'admins';
+}
 
 let state = ensureStateDefaults();
 let supabaseClient = null;
@@ -70,7 +84,10 @@ const elements = {
   policyFeedback: document.getElementById('policy-feedback'),
 };
 
+window.addEventListener('subra:supabase-config-ready', handleSupabaseConfigEvent);
+
 initializeAdmin();
+handleSupabaseConfigReady();
 
 function initializeAdmin() {
   if (elements.loginHint) {
@@ -97,6 +114,41 @@ function initializeAdmin() {
   elements.policyForm?.addEventListener('submit', handlePolicySubmit);
 
   restoreSession();
+}
+
+function handleSupabaseConfigEvent(event) {
+  const nextConfig = event?.detail || window.SUBRA_SUPABASE_CONFIG || null;
+  if (realtimeChannel && supabaseClient) {
+    try {
+      supabaseClient.removeChannel(realtimeChannel);
+    } catch (error) {
+      console.warn('Kunne ikke afregistrere eksisterende Supabase-kanal', error);
+    }
+  }
+
+  realtimeChannel = null;
+  supabaseClient = null;
+  isCloudReady = false;
+  activeAdmin = null;
+
+  applySupabaseConfig(nextConfig);
+  showLogin();
+  handleSupabaseConfigReady();
+}
+
+function handleSupabaseConfigReady() {
+  if (elements.loginHint) {
+    elements.loginHint.textContent = ADMIN_HINT;
+  }
+
+  if (state?.settings?.kiosk) {
+    state.settings.kiosk.table = KIOSK_STATE_TABLE;
+    state.settings.kiosk.id = KIOSK_STATE_ID;
+  }
+
+  if (SUPABASE_CONFIG?.url && SUPABASE_CONFIG?.anonKey && !supabaseClient) {
+    restoreSession();
+  }
 }
 
 function ensureStateDefaults(data = {}) {
