@@ -1,14 +1,12 @@
 const INACTIVITY_TIMEOUT = 60000; // 60 sekunder før pauseskærm
-let SUPABASE_CONFIG = null;
-let KIOSK_STATE_TABLE = 'kiosk_state';
-let KIOSK_STATE_ID = 'subra-main';
-let KIOSK_CHANNEL = `kiosk-state-${KIOSK_STATE_ID}`;
-let SCREENSAVER_BUCKET = 'screensaver';
-let SLIDES_FOLDER = 'slides';
-let KIOSK_SERVICE_EMAIL = null;
-let KIOSK_SERVICE_PASSWORD = null;
+let LOCAL_CONFIG = null;
+let API_BASE_URL = '';
+let KIOSK_SERVICE_TOKEN = '';
+let lastSyncedAt = null;
+let syncTimer = null;
+const POLL_INTERVAL = 15000;
 
-applySupabaseConfig(window.SUBRA_SUPABASE_CONFIG || null);
+applyLocalConfig(window.SUBRA_LOCAL_CONFIG || null);
 
 const DEFAULTS = window.SUBRA_DEFAULTS || {};
 const seedEmployees = DEFAULTS.employees || [];
@@ -53,16 +51,10 @@ const SUMMARY_EMPTY_MESSAGES = {
   guests: 'Ingen gæster er registreret endnu i dag.',
 };
 
-function applySupabaseConfig(config) {
-  SUPABASE_CONFIG = config || null;
-  KIOSK_STATE_TABLE = SUPABASE_CONFIG?.tables?.kioskState || 'kiosk_state';
-  KIOSK_STATE_ID = SUPABASE_CONFIG?.kiosk?.stateId || 'subra-main';
-  KIOSK_CHANNEL =
-    SUPABASE_CONFIG?.kiosk?.channel || `kiosk-state-${KIOSK_STATE_ID}`;
-  SCREENSAVER_BUCKET = SUPABASE_CONFIG?.storage?.screensaverBucket || 'screensaver';
-  SLIDES_FOLDER = SUPABASE_CONFIG?.storage?.slidesFolder || 'slides';
-  KIOSK_SERVICE_EMAIL = SUPABASE_CONFIG?.kiosk?.serviceEmail || null;
-  KIOSK_SERVICE_PASSWORD = SUPABASE_CONFIG?.kiosk?.servicePassword || null;
+function applyLocalConfig(config) {
+  LOCAL_CONFIG = config || {};
+  API_BASE_URL = LOCAL_CONFIG.apiBaseUrl || '';
+  KIOSK_SERVICE_TOKEN = LOCAL_CONFIG.kioskServiceToken || '';
 }
 
 let state = ensureStateDefaults();
@@ -70,11 +62,7 @@ let inactivityTimer;
 let activeModalEmployee = null;
 let screensaverInterval;
 let pendingSlideUploadId = null;
-let supabaseClient = null;
-let realtimeChannel = null;
-let isCloudReady = false;
-let isApplyingRemoteState = false;
-let hasCloudWarning = false;
+let isSyncing = false;
 
 const elements = {
   screensaver: document.getElementById('screensaver'),
@@ -127,15 +115,16 @@ const elements = {
   summaryList: document.getElementById('summary-list'),
 };
 
-window.addEventListener('subra:supabase-config-ready', handleSupabaseConfigEvent);
-
 init();
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', stopSyncLoop);
+}
 
 async function init() {
   attachEvents();
   renderSlides();
   renderAll();
-  await initializeSupabase();
+  await bootstrapRemoteState();
   restartScreensaverCycle();
   tickClock();
   setInterval(tickClock, 1000);
@@ -158,8 +147,8 @@ function ensureStateDefaults(data = {}) {
 
   const settings = {
     kiosk: {
-      table: data.settings?.kiosk?.table || KIOSK_STATE_TABLE,
-      id: data.settings?.kiosk?.id || KIOSK_STATE_ID,
+      table: data.settings?.kiosk?.table || 'local_state',
+      id: data.settings?.kiosk?.id || 'local',
       lastSynced: data.settings?.kiosk?.lastSynced || null,
     },
   };
@@ -217,48 +206,100 @@ function cloneState(source = state) {
   return JSON.parse(JSON.stringify(source));
 }
 
+async function bootstrapRemoteState() {
+  await fetchRemoteState(true);
+  startSyncLoop();
+}
+
 function commitState(nextState) {
   state = ensureStateDefaults(nextState || state);
+  state.updatedAt = new Date().toISOString();
+  state.settings = state.settings || {};
+  state.settings.kiosk = state.settings.kiosk || { id: 'local' };
+  state.settings.kiosk.lastSynced = state.updatedAt;
+  void pushStateToServer();
+}
 
-  if (!supabaseClient) {
-    if (!hasCloudWarning) {
-      appendSyncOutput('Sky-synkronisering er ikke initialiseret. Tjek Supabase-konfigurationen.');
-      hasCloudWarning = true;
-    }
-    return;
+function startSyncLoop() {
+  if (typeof window === 'undefined') return;
+  if (syncTimer) {
+    window.clearInterval(syncTimer);
   }
+  syncTimer = window.setInterval(() => {
+    void fetchRemoteState();
+  }, POLL_INTERVAL);
+}
 
-  if (!isCloudReady) {
-    if (!hasCloudWarning) {
-      appendSyncOutput('Venter på forbindelse til skyen. Ændringer sendes, så snart forbindelsen er klar.');
-      hasCloudWarning = true;
-    }
-    return;
+function stopSyncLoop() {
+  if (syncTimer && typeof window !== 'undefined') {
+    window.clearInterval(syncTimer);
+    syncTimer = null;
   }
+}
 
-  const snapshot = ensureStateDefaults(state);
-  snapshot.updatedAt = new Date().toISOString();
-  snapshot.settings.kiosk = {
-    table: KIOSK_STATE_TABLE,
-    id: KIOSK_STATE_ID,
-    lastSynced: snapshot.updatedAt,
-  };
-  state = snapshot;
+async function fetchRemoteState(force = false) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/state`, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
 
-  void supabaseClient
-    .from(KIOSK_STATE_TABLE)
-    .upsert({ id: KIOSK_STATE_ID, state: serializeForStorage(snapshot) }, { onConflict: 'id' })
-    .then(({ error }) => {
-      if (error) {
-        throw error;
-      }
-      hasCloudWarning = false;
-      appendSyncOutput('Skyen er opdateret.');
-    })
-    .catch((error) => {
-      console.error('Kunne ikke gemme state i skyen', error);
-      appendSyncOutput('Kunne ikke gemme til skyen. Kontrollér Supabase-forbindelsen.');
+    const payload = await response.json();
+    if (!payload?.state) {
+      return;
+    }
+
+    if (!force && lastSyncedAt && payload.state.updatedAt && payload.state.updatedAt === lastSyncedAt) {
+      return;
+    }
+
+    state = ensureStateDefaults(payload.state);
+    lastSyncedAt = state.updatedAt;
+    renderSlides();
+    renderAll();
+    updateQrCodes();
+    updateGuestPolicyLink();
+  } catch (error) {
+    appendSyncOutput(`Kunne ikke hente data fra serveren: ${error.message}`);
+  }
+}
+
+async function pushStateToServer() {
+  if (isSyncing) return;
+  isSyncing = true;
+
+  try {
+    const body = JSON.stringify({ state: serializeForStorage(state) });
+    const headers = { 'Content-Type': 'application/json' };
+    if (KIOSK_SERVICE_TOKEN) {
+      headers['X-Service-Token'] = KIOSK_SERVICE_TOKEN;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/state`, {
+      method: 'PUT',
+      headers,
+      body,
     });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (payload?.state) {
+      state = ensureStateDefaults(payload.state);
+      lastSyncedAt = state.updatedAt;
+      renderSlides();
+      renderAll();
+    }
+
+    appendSyncOutput('Ændringer gemt på SUBRAs lokale server.');
+  } catch (error) {
+    console.error('Kunne ikke gemme state til serveren', error);
+    appendSyncOutput(`Kunne ikke gemme til den lokale server: ${error.message}`);
+  } finally {
+    isSyncing = false;
+  }
 }
 
 function attachEvents() {
@@ -1106,38 +1147,39 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
-    if (!supabaseClient) {
-      throw new Error('Supabase er ikke initialiseret.');
+    const dataUrl = await readFileAsDataUrl(file);
+    const headers = { 'Content-Type': 'application/json' };
+    if (KIOSK_SERVICE_TOKEN) {
+      headers['X-Service-Token'] = KIOSK_SERVICE_TOKEN;
     }
 
-    const storagePath = `${SLIDES_FOLDER}/${slide.id}-${Date.now()}-${safeName}`;
-    const { error: uploadError } = await supabaseClient.storage
-      .from(SCREENSAVER_BUCKET)
-      .upload(storagePath, file, { upsert: true, contentType: file.type });
-    if (uploadError) {
-      throw uploadError;
+    const response = await fetch(`${API_BASE_URL}/api/slides/upload`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        id: slide.id,
+        dataUrl,
+        previousPath: slide.storagePath || null,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
 
-    const { data: publicData, error: publicError } = supabaseClient.storage
-      .from(SCREENSAVER_BUCKET)
-      .getPublicUrl(storagePath);
-    if (publicError) {
-      throw publicError;
+    const payload = await response.json();
+    if (!payload?.imageUrl) {
+      throw new Error('Ugyldigt svar fra serveren');
     }
 
-    if (slide.storagePath && slide.storagePath !== `${SCREENSAVER_BUCKET}:${storagePath}`) {
-      await deleteStorageAsset(slide.storagePath);
-    }
-
-    slide.image = publicData.publicUrl;
-    slide.storagePath = `${SCREENSAVER_BUCKET}:${storagePath}`;
+    slide.image = payload.imageUrl;
+    slide.storagePath = payload.storagePath || null;
     slide.updatedAt = new Date().toISOString();
 
     renderSlides();
     renderScreensaverAdmin();
     commitState();
-    appendSyncOutput('Opdaterede pauseskærmsbilledet via Supabase Storage.');
+    appendSyncOutput('Opdaterede pauseskærmsbilledet via SUBRAs lokale server.');
   } catch (error) {
     console.error('Fejl ved upload af slide', error);
     appendSyncOutput(`Kunne ikke uploade billede: ${error.message}`);
@@ -1159,203 +1201,7 @@ async function deleteSlide(slideId) {
   appendSyncOutput('Fjernede slide fra pauseskærmen.');
 
   if (removed?.storagePath) {
-    await deleteStorageAsset(removed.storagePath);
-  }
-}
-
-function handleSupabaseConfigEvent(event) {
-  const nextConfig = event?.detail || window.SUBRA_SUPABASE_CONFIG || null;
-  if (realtimeChannel && supabaseClient) {
-    try {
-      supabaseClient.removeChannel(realtimeChannel);
-    } catch (error) {
-      console.warn('Kunne ikke afregistrere eksisterende Supabase-kanal', error);
-    }
-  }
-
-  realtimeChannel = null;
-  supabaseClient = null;
-  isCloudReady = false;
-  hasCloudWarning = false;
-
-  applySupabaseConfig(nextConfig);
-  handleSupabaseConfigReady();
-}
-
-function handleSupabaseConfigReady() {
-  if (state?.settings?.kiosk) {
-    state.settings.kiosk.table = KIOSK_STATE_TABLE;
-    state.settings.kiosk.id = KIOSK_STATE_ID;
-  }
-
-  if (SUPABASE_CONFIG?.url && SUPABASE_CONFIG?.anonKey) {
-    initializeSupabase();
-  }
-}
-
-async function initializeSupabase() {
-  if (typeof window.supabase === 'undefined') {
-    appendSyncOutput('Supabase SDK kunne ikke indlæses.');
-    return;
-  }
-
-  if (!SUPABASE_CONFIG?.url || !SUPABASE_CONFIG?.anonKey) {
-    appendSyncOutput('Tilføj dine Supabase-nøgler i supabase-config.js for at aktivere synkronisering.');
-    return;
-  }
-
-  try {
-    if (!supabaseClient) {
-      supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: true,
-        },
-      });
-    }
-
-    await ensureServiceSession();
-    await ensureCloudState();
-    subscribeToCloudState();
-    isCloudReady = true;
-    const projectHost = safeSupabaseHost();
-    appendSyncOutput(
-      `Forbundet til Supabase-projektet ${projectHost}. Alle ændringer gemmes i skyen.`
-    );
-  } catch (error) {
-    console.error('Kunne ikke initialisere Supabase', error);
-    appendSyncOutput('Kunne ikke oprette forbindelse til Supabase. Kontrollér konfigurationen i supabase-config.js.');
-    supabaseClient = null;
-  }
-}
-
-async function ensureServiceSession() {
-  if (!supabaseClient) return;
-  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
-  if (sessionError) {
-    console.warn('Kunne ikke hente Supabase-session', sessionError);
-  }
-
-  if (sessionData?.session) {
-    return;
-  }
-
-  if (!KIOSK_SERVICE_EMAIL || !KIOSK_SERVICE_PASSWORD) {
-    appendSyncOutput('Konfigurer service-login i supabase-config.js for at aktivere kiosk-synkronisering.');
-    throw new Error('Mangler Supabase service-login.');
-  }
-
-  const { error } = await supabaseClient.auth.signInWithPassword({
-    email: KIOSK_SERVICE_EMAIL,
-    password: KIOSK_SERVICE_PASSWORD,
-  });
-  if (error) {
-    appendSyncOutput('Kunne ikke logge ind med Supabase-servicebrugeren.');
-    throw error;
-  }
-}
-
-async function ensureCloudState() {
-  if (!supabaseClient) return;
-  try {
-    const { data, error } = await supabaseClient
-      .from(KIOSK_STATE_TABLE)
-      .select('state')
-      .eq('id', KIOSK_STATE_ID)
-      .maybeSingle();
-
-    if (error) {
-      throw error;
-    }
-
-    if (!data || !data.state) {
-      const seed = ensureStateDefaults(state);
-      seed.updatedAt = new Date().toISOString();
-      seed.settings.kiosk = {
-        table: KIOSK_STATE_TABLE,
-        id: KIOSK_STATE_ID,
-        lastSynced: seed.updatedAt,
-      };
-      const { error: upsertError } = await supabaseClient
-        .from(KIOSK_STATE_TABLE)
-        .upsert({ id: KIOSK_STATE_ID, state: serializeForStorage(seed) }, { onConflict: 'id' });
-      if (upsertError) {
-        throw upsertError;
-      }
-      state = seed;
-    } else {
-      state = ensureStateDefaults(data.state);
-    }
-
-    renderSlides();
-    renderAll();
-  } catch (error) {
-    console.error('Kunne ikke hente state fra Supabase', error);
-    appendSyncOutput('Kunne ikke hente data fra skyen. Prøv at genindlæse siden.');
-  }
-}
-
-function subscribeToCloudState() {
-  if (!supabaseClient) return;
-  if (realtimeChannel) {
-    void supabaseClient.removeChannel(realtimeChannel);
-  }
-
-  realtimeChannel = supabaseClient
-    .channel(KIOSK_CHANNEL)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: KIOSK_STATE_TABLE, filter: `id=eq.${KIOSK_STATE_ID}` },
-      (payload) => {
-        if (!payload.new?.state) return;
-        if (isApplyingRemoteState) return;
-        isApplyingRemoteState = true;
-        isCloudReady = true;
-        hasCloudWarning = false;
-        state = ensureStateDefaults(payload.new.state);
-        renderSlides();
-        renderAll();
-        isApplyingRemoteState = false;
-      }
-    )
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        isCloudReady = true;
-        hasCloudWarning = false;
-      }
-    });
-}
-
-async function deleteStorageAsset(path) {
-  if (!supabaseClient || !path) return;
-  const { bucket, objectPath } = parseStoragePath(path);
-  if (!bucket || !objectPath) return;
-  const { error } = await supabaseClient.storage.from(bucket).remove([objectPath]);
-  if (error) {
-    console.warn('Kunne ikke slette fil i Supabase Storage', error);
-  }
-}
-
-function parseStoragePath(path) {
-  if (!path) {
-    return { bucket: null, objectPath: null };
-  }
-
-  if (path.includes(':')) {
-    const [bucket, ...rest] = path.split(':');
-    return { bucket, objectPath: rest.join(':').replace(/^\/+/, '') };
-  }
-
-  return { bucket: SCREENSAVER_BUCKET, objectPath: path.replace(/^\/+/, '') };
-}
-
-function safeSupabaseHost() {
-  if (!SUPABASE_CONFIG?.url) return 'supabase';
-  try {
-    return new URL(SUPABASE_CONFIG.url).hostname;
-  } catch (error) {
-    console.warn('Ugyldigt Supabase-URL i konfigurationen', error);
-    return SUPABASE_CONFIG.url;
+    void removeSlideAsset(removed.storagePath);
   }
 }
 
@@ -1454,6 +1300,31 @@ function handleImport(event) {
   };
   reader.readAsText(file);
   elements.importFile.value = '';
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Kunne ikke læse filen'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function removeSlideAsset(storagePath) {
+  if (!storagePath) return;
+  const headers = { 'Content-Type': 'application/json' };
+  if (KIOSK_SERVICE_TOKEN) {
+    headers['X-Service-Token'] = KIOSK_SERVICE_TOKEN;
+  }
+
+  void fetch(`${API_BASE_URL}/api/slides/remove`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ storagePath }),
+  }).catch((error) => {
+    console.warn('Kunne ikke slette slide-asset', error);
+  });
 }
 
 function isToday(timestamp) {

@@ -1,0 +1,12 @@
+{
+  "name": "subra-screen",
+  "version": "1.0.0",
+  "description": "Offline-first kiosk and admin portal for SUBRA with local backend",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {}
+}
