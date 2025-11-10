@@ -7,6 +7,10 @@ let SCREENSAVER_BUCKET = 'screensaver';
 let SLIDES_FOLDER = 'slides';
 let ADMIN_TABLE = 'admins';
 
+let configMissingTimer = null;
+let isConfigMissing = false;
+const CONFIG_CHECK_DELAY = 750;
+
 const DEFAULTS = window.SUBRA_DEFAULTS || {};
 applySupabaseConfig(window.SUBRA_SUPABASE_CONFIG || null);
 const SLIDE_THEMES = [
@@ -87,10 +91,13 @@ const elements = {
   policyFeedback: document.getElementById('policy-feedback'),
 };
 
+window.addEventListener('error', handleConfigScriptError, true);
 window.addEventListener('subra:supabase-config-ready', handleSupabaseConfigEvent);
+document.addEventListener('subra:supabase-config-error', showConfigMissingHint);
 
 initializeAdmin();
 handleSupabaseConfigReady();
+scheduleConfigPresenceCheck();
 
 function initializeAdmin() {
   if (elements.loginHint) {
@@ -135,6 +142,7 @@ function handleSupabaseConfigEvent(event) {
   activeAdmin = null;
 
   applySupabaseConfig(nextConfig);
+  clearConfigMissingHint();
   showLogin();
   handleSupabaseConfigReady();
 }
@@ -151,6 +159,73 @@ function handleSupabaseConfigReady() {
 
   if (SUPABASE_CONFIG?.url && SUPABASE_CONFIG?.anonKey && !supabaseClient) {
     restoreSession();
+    clearConfigMissingHint();
+  }
+}
+
+function scheduleConfigPresenceCheck() {
+  if (configMissingTimer) {
+    return;
+  }
+
+  configMissingTimer = window.setTimeout(() => {
+    configMissingTimer = null;
+    if (!SUPABASE_CONFIG?.url || !SUPABASE_CONFIG?.anonKey) {
+      showConfigMissingHint();
+    }
+  }, CONFIG_CHECK_DELAY);
+}
+
+function handleConfigScriptError(event) {
+  const target = event?.target;
+  if (!target || target.tagName !== 'SCRIPT') {
+    return;
+  }
+
+  const src = target.getAttribute('src') || '';
+  if (src.endsWith('supabase-config.js')) {
+    showConfigMissingHint();
+  }
+}
+
+function showConfigMissingHint() {
+  if (isConfigMissing) {
+    return;
+  }
+
+  isConfigMissing = true;
+  console.error(
+    'Supabase-konfigurationsfilen (supabase-config.js) blev ikke indlæst. Kontrollér at filen deployes sammen med admin.html.',
+  );
+
+  if (elements.loginError) {
+    elements.loginError.dataset.source = 'config-missing';
+    elements.loginError.textContent =
+      'Supabase-konfigurationen kunne ikke indlæses. Kontrollér at filen supabase-config.js er tilgængelig på serveren.';
+  }
+
+  if (elements.loginHint) {
+    elements.loginHint.dataset.source = 'config-missing';
+    elements.loginHint.textContent =
+      'Filen supabase-config.js skal ligge ved siden af admin.html. Genindlæs siden når filen er på plads.';
+  }
+}
+
+function clearConfigMissingHint() {
+  if (!isConfigMissing) {
+    return;
+  }
+
+  isConfigMissing = false;
+
+  if (elements.loginError?.dataset.source === 'config-missing') {
+    delete elements.loginError.dataset.source;
+    elements.loginError.textContent = '';
+  }
+
+  if (elements.loginHint?.dataset.source === 'config-missing') {
+    delete elements.loginHint.dataset.source;
+    elements.loginHint.textContent = ADMIN_HINT;
   }
 }
 
