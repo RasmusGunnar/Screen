@@ -11,7 +11,7 @@ window.SUBRA_SUPABASE_CONFIG = {
     stateId: 'subra-main',                 // den centrale state-række (kan oprettes manuelt i DB)
     channel: 'kiosk-state-subra-main',     // realtime kanalnavn
     serviceEmail: 'admin@subra.dk',        // kiosk/service-brugeren (nu sat som editor i admins)
-    servicePassword: '<INDSÆT-KODE-HER>',  // TODO: indsæt præcis adgangskode (du skrev "admin")
+    servicePassword: 'admin',  // TODO: indsæt præcis adgangskode (du skrev "admin")
   },
 
   tables: {
