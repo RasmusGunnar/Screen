@@ -1,0 +1,10 @@
+[
+  {
+    "id": "admin-1",
+    "email": "admin@subra.dk",
+    "name": "SUBRA Administrator",
+    "role": "owner",
+    "salt": "subra-salt",
+    "passwordHash": "92c1304fb823e24cf4cbead31c009d29a0b0ca4ce306cb054fbce56850aebfd6"
+  }
+]

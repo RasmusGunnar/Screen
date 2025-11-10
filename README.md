@@ -12,53 +12,54 @@ registrering af medarbejdere og gæster inspireret af funktionaliteten fra Swipe
   politikker i formularen.
 - **Admin-backend** som selvstændig webapp med login, styring af medarbejdere/slides/QR-links og CSV-eksport.
 - **Statistik og rapporter**: Nøgletal, aktivitetslog, brandøvelses-knapper og evakueringsliste i realtid.
-- **Synkronisering**: State, medarbejdere og slides gemmes centralt i Supabase (Postgres + Storage) og opdateres live på
-  alle skærme.
+- **Synkronisering**: State, medarbejdere og slides gemmes på en indbygget Node.js-backend, som alle skærme
+  synkroniserer imod.
 - **QR-selvbetjening**: Kioskvisningen viser QR-koder, der kan udskiftes med virksomhedens egne links til hurtig
   check-ind/out og gæsteregistrering.
 
 ## Kom godt i gang
 
-1. Provisionér Supabase-projektet: kør SQL-migrationen i `supabase/migrations` (via `supabase db push` eller SQL-editoren)
-   og opret en servicebruger til kiosken (rolle: `editor`). Giv mindst én administrator rollen `superadmin` i tabellen
-   `admins`.
-2. Kopiér `supabase-config.example.js` til `supabase-config.js` og indsæt projektets URL, Anon Key og service-login.
-   Her kan du også justere id'et for kiosk-state, realtime-kanal og navne på storage-buckets.
-3. Åbn `index.html` i en browser på en 16:9 vertikal skærm. Layoutet er optimeret til 1080×1920.
-4. Tryk på pauseskærmen for at gå til registreringsvisningen. Inaktivitet sender brugeren tilbage til
-   pauseskærmen automatisk.
-5. Brug søgefeltet eller rul gennem afdelingsoversigten for at tjekke medarbejdere ind/ud eller registrere
-   fravær.
-6. Registrér gæster via formularen. Der logges automatisk en simuleret SMS-notifikation til værten.
-7. Åbn `admin.html` (fx via "Admin login"-knappen i kioskheaderen eller direkte i browseren) for at logge ind i
-   backend-portalen. Herfra kan du redigere medarbejdere, slides, QR-links og hente rapporter.
+1. Sørg for at have Node.js ≥18 installeret. Projektet kræver ingen eksterne afhængigheder.
+2. Start den lokale backend ved at køre `node server.js`. Serveren starter som udgangspunkt på
+   [http://localhost:3000](http://localhost:3000).
+3. Besøg `http://localhost:3000` i en browser på en vertikal 16:9 skærm (layoutet er optimeret til 1080×1920).
+4. Tryk på pauseskærmen for at gå til registreringsvisningen. Inaktivitet sender brugeren automatisk tilbage til
+   pauseskærmen.
+5. Registrer medarbejderstatus eller gæster direkte på kioskvisningen. Der logges stadig en simuleret SMS til værten.
+6. Klik på "Admin login"-knappen (eller åbn `http://localhost:3000/admin.html`) for at tilgå backend-portalen.
+   Standard-login er `admin@subra.dk` / `admin`. Adgangskoden kan ændres i `data/admins.json`.
+7. Fra adminportalen kan du redigere medarbejdere, slides, QR-links, politikker, eksportere CSV og synkronisere
+   kioskvisningen i realtid via den lokale server.
 
 ## Opdatering af medarbejdere
 
 - **Direkte i adminportalen**: Brug formularen i backend ("Medarbejdere"-panelet) til at tilføje, redigere eller
-  slette medarbejdere. Når en medarbejder er valgt til redigering, udfyldes felterne automatisk og gemmes straks i
-  Supabase.
+  slette medarbejdere. Når en medarbejder er valgt til redigering, udfyldes felterne automatisk og gemmes straks på
+ den lokale server.
+
+> `local-config.js` indeholder kioskens service-token. Skift værdien og den tilhørende miljøvariabel
+> `KIOSK_SERVICE_TOKEN`, hvis du vil forhindre uautoriserede opdateringer.
 - **JSON-import**: Eksportér først eksisterende data for at få strukturen. Redigér filen (tilføj fx nye medarbejdere
   med felterne `firstName`, `lastName`, `department`, `role`, `contact`, `photo`). Importér derefter filen igen – data
-  sendes til Supabase i ét hug.
-- **Billeder**: Upload medarbejderportrætter til samme Supabase Storage-bucket (fx mappen `/people/`) og indsæt den
-  genererede download-URL i feltet “Billede-URL”.
+  sendes til backend'en i ét hug.
+- **Billeder**: Upload medarbejderportrætter til et valgfrit filbibliotek (fx virksomhedens CDN) og indsæt URL'en i
+  feltet “Billede-URL”.
 - **Programmatisk**: `window.SUBRA_DEFAULTS` i `defaults.js` kan redigeres for at ændre demo-data, men daglig drift
   klares hurtigst via adminportalen eller import/eksport.
 
 ### Vedligeholdelse af politikker
 
 - Alle politikgodkendelser kan nulstilles fra adminportalen via knappen "Politikker" ud for den enkelte medarbejder.
-- Politikhistorik gemmes sammen med den øvrige state i Supabase og eksporteres via JSON.
+- Politikhistorik gemmes sammen med den øvrige state i den lokale database og eksporteres via JSON.
 
 ## Pauseskærm & billedbank
 
 - Åbn adminportalen og rul til sektionen **"Pauseskærm & billedbank"** for at redigere overskrift, brødtekst, tema og
   billedmateriale på hvert slide.
-- Klik **"Upload"** for at vælge et nyt foto. Filerne gemmes i Supabase Storage-bucket'en (standard `screensaver` og
-  undermappen defineret i `supabase-config.js`). Download-URL'en gemmes i Supabase og distribueres til alle kiosker.
-- Brug pileknapperne til at ændre rækkefølgen. Ændringerne skrives direkte til Supabase, så alle enheder straks ser
-  samme slide-orden.
+- Klik **"Upload"** for at vælge et nyt foto. Filerne gemmes i mappen `uploads/slides/` på den lokale server, og der
+  returneres en offentlig URL som automatisk bruges i kioskvisningen.
+- Brug pileknapperne til at ændre rækkefølgen. Ændringerne skrives direkte til serverens state, så alle enheder straks
+  ser samme slide-orden.
 - Ønskes en fast standardpakke ved deploy, kan `window.SUBRA_DEFAULTS.slides` i `defaults.js` opdateres – første opstart
   synker disse værdier til skyen, hvis dokumentet er tomt.
 
@@ -79,36 +80,24 @@ notifikation via `notifyHost`-hooket.
 
 ## Rapporter & statistik
 
-- Adminportalen viser et overblik over nøgletal (på kontoret, remote, fravær, gæster i dag osv.) baseret på Supabase-
-  data og den indbyggede log.
+- Adminportalen viser et overblik over nøgletal (på kontoret, remote, fravær, gæster i dag osv.) baseret på den lokale
+  state og den indbyggede log.
 - Under **"Aktivitetslog"** kan du filtrere på afdelinger eller hændelsestyper og få vist tidsstemplede events.
 - Brug sektionen **"Dataudtræk"** til at downloade CSV med medarbejderstatus og/eller gæstecheck-ins filtreret på
   dato-intervaller og specifikke medarbejdere. Filen kan importeres i Excel, Google Sheets eller BI-systemer.
-
-## Supabase opsætning
-
-- Kør migrationen i `supabase/migrations` for at oprette tabeller, RLS-politikker, storage-buckets samt triggers der
-  synkroniserer `auth.users` → `admins`.
-- Opret en dedikeret kiosk/service-bruger med rollen `editor` og gem dens e-mail + adgangskode i `supabase-config.js`
-  under `kiosk.serviceEmail`/`servicePassword`.
-- Opgrader mindst én administrator til rollen `superadmin` (enten via Admin UI eller SQL: `update admins set role='superadmin' where email='...'`).
-- Udfyld `supabase-config.js` med projektets URL, Anon Key, bucket-navne og valgfri realtime-kanalnavne. Filer bør ikke
-  indeholde service role key – brug kun den offentlige anon key og loginoplysninger til de relevante brugere.
-- Kontrollér at Supabase Storage-politikkerne tillader læsning for alle og skrivning for `editor`/`superadmin`-rollerne
-  (migrationen opretter standardpolitikkerne).
 
 ## Assets & layout
 
 - Logoet ligger i `assets/logo.svg` og vises nu uden baggrund eller skygge på pauseskærmen, så transparente filer står
   frit oven på billederne.
-- Alle slides og medarbejderfotos bør hostes i Supabase Storage eller et tilsvarende CDN. Upload direkte fra
-  adminportalen gemmer i Storage, mens medarbejderfotos indsættes som delte URL'er.
+- Alle slides gemmes i `uploads/slides/` via backend'en, mens medarbejderfotos typisk hostes eksternt (CDN, DAM eller
+  offentlige links) og blot refereres via URL.
 - Layoutet er optimeret til 16:9 i højformat (1080×1920). Når appen åbnes på en anden opløsning, centreres den med
   samme proportioner.
 
 ## Videre udvikling
 
-- Tilføj backend (f.eks. Supabase eller virksomhedens API) for realtids-synkronisering, dashboards og
+- Tilføj integrationer til virksomhedens øvrige systemer (ERP, HR eller adgangskontrol) for avancerede dashboards og
   adgangsstyring.
 - Integrér SMS/e-mail notifikationer ved at udvide funktionen `notifyHost` med en egentlig gateway.
 - Udvid QR-workflows med mobilvenlige PWA-visninger eller bank-ID for stærk autentifikation.
