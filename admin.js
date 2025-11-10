@@ -1,7 +1,10 @@
+const firebaseAdapter = window.SubraFirebase || null;
 let LOCAL_CONFIG = null;
 let ADMIN_HINT = '';
-let API_BASE_URL = '';
-let KIOSK_SERVICE_TOKEN = '';
+let firebaseReady = false;
+let firebaseUnsubscribe = null;
+let firebaseAuthUnsubscribe = null;
+let hasHandledAuthState = false;
 const POLL_INTERVAL = 10000;
 let syncTimer = null;
 let lastSyncedAt = null;
@@ -20,8 +23,9 @@ const SLIDE_THEMES = [
 function applyLocalConfig(config) {
   LOCAL_CONFIG = config || {};
   ADMIN_HINT = LOCAL_CONFIG?.admin?.hint || '';
-  API_BASE_URL = LOCAL_CONFIG?.apiBaseUrl || '';
-  KIOSK_SERVICE_TOKEN = LOCAL_CONFIG?.kioskServiceToken || '';
+  if (firebaseAdapter) {
+    firebaseAdapter.configure(LOCAL_CONFIG?.firebase || {});
+  }
 }
 
 let state = ensureStateDefaults();
@@ -103,7 +107,54 @@ function initializeAdmin() {
   elements.qrForm?.addEventListener('submit', handleQrSubmit);
   elements.policyForm?.addEventListener('submit', handlePolicySubmit);
 
-  restoreSession();
+  setupFirebaseAuth();
+}
+
+function setupFirebaseAuth() {
+  if (!firebaseAdapter) {
+    appendSyncLog('Firebase er ikke indlæst – viser kun lokale data.');
+    showLogin();
+    return;
+  }
+
+  firebaseAdapter.init(LOCAL_CONFIG?.firebase || {});
+
+  if (!firebaseAdapter.isReady()) {
+    appendSyncLog('Firebase er ikke konfigureret endnu. Udfyld firebase-config.js.');
+    showLogin();
+    return;
+  }
+
+  if (firebaseAuthUnsubscribe) {
+    firebaseAuthUnsubscribe();
+    firebaseAuthUnsubscribe = null;
+  }
+
+  firebaseAuthUnsubscribe = firebaseAdapter.onAuthStateChanged(async (user) => {
+    if (user) {
+      activeAdmin = {
+        email: user.email || 'ukendt@subra',
+        name: user.displayName || user.email || 'Administrator',
+        role: user.role || 'editor',
+        uid: user.uid,
+      };
+      firebaseReady = true;
+      showAdmin();
+      await bootstrapRemoteState();
+      hasHandledAuthState = true;
+    } else {
+      firebaseReady = false;
+      activeAdmin = null;
+      stopSyncLoop();
+      state = ensureStateDefaults();
+      renderAll();
+      showLogin();
+      if (hasHandledAuthState) {
+        appendSyncLog('Firebase-session afsluttet.');
+      }
+      hasHandledAuthState = true;
+    }
+  });
 }
 
 function ensureStateDefaults(data = {}) {
@@ -169,26 +220,50 @@ function serializeForStorage(data) {
   );
 }
 
-function apiFetch(path, options = {}) {
-  const headers = options.headers ? { ...options.headers } : {};
-  if (options.body && !headers['Content-Type']) {
-    headers['Content-Type'] = 'application/json';
+async function bootstrapRemoteState() {
+  if (!firebaseReady || !firebaseAdapter?.isReady()) {
+    appendSyncLog('Firebase er ikke klar endnu. Viser lokale data.');
+    return;
   }
 
-  return fetch(`${API_BASE_URL}${path}`, {
-    credentials: 'include',
-    ...options,
-    headers,
-  });
-}
-
-async function bootstrapRemoteState() {
   await fetchRemoteState(true);
   startSyncLoop();
 }
 
 function startSyncLoop() {
   if (typeof window === 'undefined') return;
+  if (!firebaseReady) {
+    return;
+  }
+
+  if (LOCAL_CONFIG?.firebase?.enableRealtime) {
+    if (firebaseUnsubscribe) {
+      firebaseUnsubscribe();
+    }
+    try {
+      firebaseUnsubscribe = firebaseAdapter.subscribeToState((remoteState) => {
+        if (!remoteState) {
+          return;
+        }
+        const normalized = ensureStateDefaults(remoteState);
+        if (lastSyncedAt && normalized.updatedAt === lastSyncedAt) {
+          return;
+        }
+        state = normalized;
+        lastSyncedAt = state.updatedAt;
+        renderAll();
+        appendSyncLog('State opdateret via Firebase (realtime).');
+      });
+    } catch (error) {
+      appendSyncLog(`Realtime-lytning fejlede: ${error.message}`);
+    }
+    return;
+  }
+
+  if (firebaseUnsubscribe) {
+    firebaseUnsubscribe();
+    firebaseUnsubscribe = null;
+  }
   if (syncTimer) {
     window.clearInterval(syncTimer);
   }
@@ -203,68 +278,69 @@ function stopSyncLoop() {
     window.clearInterval(syncTimer);
     syncTimer = null;
   }
+  if (firebaseUnsubscribe) {
+    firebaseUnsubscribe();
+    firebaseUnsubscribe = null;
+  }
 }
 
 async function fetchRemoteState(force = false) {
+  if (!firebaseReady || !firebaseAdapter?.isReady()) {
+    return;
+  }
+
   try {
-    const response = await apiFetch('/api/state', { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const payload = await response.json();
-    if (!payload?.state) {
+    const remoteState = await firebaseAdapter.fetchState();
+    if (!remoteState) {
+      appendSyncLog('Ingen state fundet i Firebase endnu.');
       return;
     }
 
-    if (!force && lastSyncedAt && payload.state.updatedAt && payload.state.updatedAt === lastSyncedAt) {
+    if (!force && lastSyncedAt && remoteState.updatedAt && remoteState.updatedAt === lastSyncedAt) {
       return;
     }
 
-    state = ensureStateDefaults(payload.state);
+    state = ensureStateDefaults(remoteState);
     lastSyncedAt = state.updatedAt;
     renderAll();
-    appendSyncLog('Data opdateret fra den lokale server.');
+    appendSyncLog('Data synkroniseret fra Firebase.');
   } catch (error) {
     console.error('Kunne ikke hente state', error);
-    appendSyncLog(`Kunne ikke hente data fra serveren: ${error.message}`);
+    appendSyncLog(`Kunne ikke hente data fra Firebase: ${error.message}`);
   }
 }
 
-async function pushStateToServer() {
+async function pushStateToFirebase() {
   if (isSyncing) return;
+  if (!firebaseReady || !firebaseAdapter?.isReady()) {
+    appendSyncLog('Firebase er ikke klar – ændringer gemmes lokalt.');
+    return;
+  }
   isSyncing = true;
 
   try {
-    const headers = {};
-    if (KIOSK_SERVICE_TOKEN) {
-      headers['X-Service-Token'] = KIOSK_SERVICE_TOKEN;
-    }
-
-    const response = await apiFetch('/api/state', {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ state: serializeForStorage(state) }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const payload = await response.json();
-    if (payload?.state) {
-      state = ensureStateDefaults(payload.state);
-      lastSyncedAt = state.updatedAt;
-      renderAll();
-    }
-
-    appendSyncLog('Ændringer gemt på SUBRAs lokale server.');
+    const saved = await firebaseAdapter.saveState(serializeForStorage(state));
+    state = ensureStateDefaults(saved);
+    lastSyncedAt = state.updatedAt;
+    renderAll();
+    appendSyncLog('Ændringer gemt i Firebase.');
   } catch (error) {
     console.error('Kunne ikke gemme state', error);
-    appendSyncLog(`Kunne ikke gemme til serveren: ${error.message}`);
+    appendSyncLog(`Kunne ikke gemme til Firebase: ${error.message}`);
   } finally {
     isSyncing = false;
   }
+}
+
+function commitState(nextState) {
+  state = ensureStateDefaults(nextState || state);
+  state.updatedAt = new Date().toISOString();
+  state.settings = state.settings || {};
+  state.settings.kiosk = state.settings.kiosk || {};
+  state.settings.kiosk.id =
+    state.settings.kiosk.id || LOCAL_CONFIG?.firebase?.stateDocId || 'local';
+  state.settings.kiosk.lastSynced = state.updatedAt;
+  void pushStateToFirebase();
 }
 
 async function handleLoginSubmit(event) {
@@ -280,49 +356,21 @@ async function handleLoginSubmit(event) {
   }
 
   try {
-    const response = await apiFetch('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Forkert e-mail eller adgangskode.');
-      }
-      throw new Error(`HTTP ${response.status}`);
+    if (!firebaseAdapter) {
+      throw new Error('Firebase er ikke indlæst.');
     }
-
-    const payload = await response.json();
-    activeAdmin = payload.admin || { email, name: email, role: 'editor' };
+    firebaseAdapter.init(LOCAL_CONFIG?.firebase || {});
+    await firebaseAdapter.signInWithPassword(email, password);
     elements.loginForm?.reset();
-    showAdmin();
-    await bootstrapRemoteState();
+    appendSyncLog('Login lykkedes. Henter data fra Firebase...');
   } catch (error) {
     console.error('Login fejlede', error);
     elements.loginError.textContent =
-      error.message === 'Forkert e-mail eller adgangskode.'
-        ? error.message
-        : 'Kunne ikke logge ind. Prøv igen.';
-  }
-}
-
-async function restoreSession() {
-  try {
-    const response = await apiFetch('/api/auth/session');
-    if (!response.ok) {
-      throw new Error('unauthorized');
-    }
-
-    const payload = await response.json();
-    if (payload?.admin) {
-      activeAdmin = payload.admin;
-      showAdmin();
-      await bootstrapRemoteState();
-    } else {
-      showLogin();
-    }
-  } catch (error) {
-    showLogin();
+      error.message === 'Firebase: Error (auth/invalid-credential).' ||
+      error.message === 'Firebase: Error (auth/wrong-password).' ||
+      error.message === 'Firebase: Error (auth/user-not-found).'
+        ? 'Forkert e-mail eller adgangskode.'
+        : error.message || 'Kunne ikke logge ind. Prøv igen.';
   }
 }
 
@@ -344,18 +392,14 @@ function showAdmin() {
 
 async function handleLogout() {
   try {
-    await apiFetch('/api/auth/logout', { method: 'POST' });
+    if (firebaseAdapter) {
+      await firebaseAdapter.signOut();
+    }
   } catch (error) {
     console.warn('Kunne ikke logge ud', error);
   }
 
-  activeAdmin = null;
-  stopSyncLoop();
-  state = ensureStateDefaults();
-  renderAll();
-  showLogin();
-  elements.loginForm?.reset();
-  appendSyncLog('Du er nu logget ud.');
+  appendSyncLog('Du er nu logget ud af Firebase.');
 }
 
 function renderAll() {
@@ -765,37 +809,18 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    const dataUrl = await readFileAsDataUrl(file);
-    const headers = {};
-    if (KIOSK_SERVICE_TOKEN) {
-      headers['X-Service-Token'] = KIOSK_SERVICE_TOKEN;
+    if (!firebaseReady || !firebaseAdapter?.isReady()) {
+      throw new Error('Firebase er ikke klar til uploads');
     }
 
-    const response = await apiFetch('/api/slides/upload', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        id: slide.id,
-        dataUrl,
-        previousPath: slide.storagePath || null,
-      }),
-    });
+    const upload = await firebaseAdapter.uploadSlide(file);
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const payload = await response.json();
-    if (!payload?.imageUrl) {
-      throw new Error('Ugyldigt svar fra serveren');
-    }
-
-    slide.image = payload.imageUrl;
-    slide.storagePath = payload.storagePath || null;
+    slide.image = upload.downloadURL;
+    slide.storagePath = upload.storagePath || null;
     slide.updatedAt = new Date().toISOString();
     renderScreensaverAdmin();
     commitState();
-    appendSyncLog('Opdaterede pauseskærmsbillede via lokal server.');
+    appendSyncLog('Opdaterede pauseskærmsbillede i Firebase Storage.');
   } catch (error) {
     console.error('Fejl ved upload af slide', error);
     appendSyncLog(`Kunne ikke uploade billede: ${error.message}`);
@@ -838,27 +863,13 @@ function handlePolicySubmit(event) {
   appendSyncLog('Opdaterede NDA-link.');
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error || new Error('Kunne ikke læse filen'));
-    reader.readAsDataURL(file);
-  });
-}
-
 function removeSlideAsset(storagePath) {
   if (!storagePath) return;
-  const headers = {};
-  if (KIOSK_SERVICE_TOKEN) {
-    headers['X-Service-Token'] = KIOSK_SERVICE_TOKEN;
+  if (!firebaseReady || !firebaseAdapter?.isReady()) {
+    return;
   }
 
-  void apiFetch('/api/slides/remove', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ storagePath }),
-  }).catch((error) => {
+  void firebaseAdapter.deleteSlide(storagePath).catch((error) => {
     console.warn('Kunne ikke fjerne slide-asset', error);
   });
 }

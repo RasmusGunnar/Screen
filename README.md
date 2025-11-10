@@ -1,112 +1,176 @@
 # SUBRA Workplace Arrival Portal (WAP)
 
-En prototypisk webapp bygget til vertikale 16:9 infoskærme. Løsningen kombinerer en pauseskærm med
-registrering af medarbejdere og gæster inspireret af funktionaliteten fra Swipedon.
+En plug-and-play kiosk- og adminløsning til vertikale 16:9 infoskærme, nu drevet af Firebase. Kiosken viser
+overblikket for medarbejdere og gæster, mens adminportalen giver fuld kontrol over data, slides og politikker – alt
+gemmes i Firestore og billeder placeres i Firebase Storage, så løsningen kan hostes statisk (fx på GitHub Pages).
 
 ## Funktioner
 
-- **Pauseskærm** med cyklende fuldskærmsslides, velkomst-overlay og glas-effekt.
-- **Registrering af medarbejdere**: søg, tjek ind/ud, administrer fravær (sygdom, barsel mv.).
-- **Gæsteregistrering** med simuleret notifikation til værten og log over dagens besøgende.
-- **Politikaccept**: medarbejdere møder en NDA/IT-politik-modal ved indtjek, og gæster skal acceptere samme
-  politikker i formularen.
-- **Admin-backend** som selvstændig webapp med login, styring af medarbejdere/slides/QR-links og CSV-eksport.
-- **Statistik og rapporter**: Nøgletal, aktivitetslog, brandøvelses-knapper og evakueringsliste i realtid.
-- **Synkronisering**: State, medarbejdere og slides gemmes på en indbygget Node.js-backend, som alle skærme
-  synkroniserer imod.
-- **QR-selvbetjening**: Kioskvisningen viser QR-koder, der kan udskiftes med virksomhedens egne links til hurtig
-  check-ind/out og gæsteregistrering.
+- **Pauseskærm** med cyklende fuldskærms­slides, velkomst-overlay og glas-effekt.
+- **Medarbejderstatus**: søg, tjek ind/ud, registrér fravær og noter.
+- **Gæsteregistrering** med krav om NDA/IT-politik og log over besøgende.
+- **Adminportal** (selvstændig webapp) med login, styring af medarbejdere/slides/QR-links og CSV-eksport.
+- **Realtime-synkronisering** via Firestore (enten live-lytning eller fallback med polling).
+- **Firebase Storage-integration** til slides/billeder direkte fra browseren.
+- **QR-selvbetjening**: generer QR-koder til medarbejder- og gæsteflows.
 
-## Kom godt i gang
+## Arkitektursoverblik
 
-1. Sørg for at have Node.js ≥18 installeret. Projektet kræver ingen eksterne afhængigheder.
-2. Start den lokale backend ved at køre `node server.js`. Serveren starter som udgangspunkt på
-   [http://localhost:3000](http://localhost:3000).
-3. Besøg `http://localhost:3000` i en browser på en vertikal 16:9 skærm (layoutet er optimeret til 1080×1920).
-4. Tryk på pauseskærmen for at gå til registreringsvisningen. Inaktivitet sender brugeren automatisk tilbage til
-   pauseskærmen.
-5. Registrer medarbejderstatus eller gæster direkte på kioskvisningen. Der logges stadig en simuleret SMS til værten.
-6. Klik på "Admin login"-knappen (eller åbn `http://localhost:3000/admin.html`) for at tilgå backend-portalen.
-   Standard-login er `admin@subra.dk` / `admin`. Adgangskoden kan ændres i `data/admins.json`.
-7. Fra adminportalen kan du redigere medarbejdere, slides, QR-links, politikker, eksportere CSV og synkronisere
-   kioskvisningen i realtid via den lokale server.
+```
+Kiosk (index.html + app.js) ┐        ┌── Firestore (kiosks/<ID>)
+                            ├───────┤
+Admin (admin.html + admin.js)┘        └── Firebase Storage (screensaver/<ID>)
+                                      └── Firebase Auth (E-mail/Password + Anonymous)
+```
 
-## Opdatering af medarbejdere
+- `firebase-config.js` rummer projektets Firebase-konfiguration (API-key m.m.).
+- `local-config.js` definerer hvilke Firestore-dokumenter og Storage-mapper kiosken/admin skal arbejde mod.
+- `firebase-adapter.js` er et tyndt lag oven på Firebase SDK'erne og bruges af både kiosk og admin.
+- Alle filer er rene HTML/CSS/JS og kan derfor hostes statisk (GitHub Pages, Netlify, Vercel Static osv.).
 
-- **Direkte i adminportalen**: Brug formularen i backend ("Medarbejdere"-panelet) til at tilføje, redigere eller
-  slette medarbejdere. Når en medarbejder er valgt til redigering, udfyldes felterne automatisk og gemmes straks på
- den lokale server.
+## Opsætning: trin-for-trin guide
 
-> `local-config.js` indeholder kioskens service-token. Skift værdien og den tilhørende miljøvariabel
-> `KIOSK_SERVICE_TOKEN`, hvis du vil forhindre uautoriserede opdateringer.
-- **JSON-import**: Eksportér først eksisterende data for at få strukturen. Redigér filen (tilføj fx nye medarbejdere
-  med felterne `firstName`, `lastName`, `department`, `role`, `contact`, `photo`). Importér derefter filen igen – data
-  sendes til backend'en i ét hug.
-- **Billeder**: Upload medarbejderportrætter til et valgfrit filbibliotek (fx virksomhedens CDN) og indsæt URL'en i
-  feltet “Billede-URL”.
-- **Programmatisk**: `window.SUBRA_DEFAULTS` i `defaults.js` kan redigeres for at ændre demo-data, men daglig drift
-  klares hurtigst via adminportalen eller import/eksport.
+> Guiden er tænkt som “copy-paste” reference til både udviklere og ikke-udviklere. Hvert punkt forklarer **hvad** du
+> skal gøre, **hvor** du gør det, og **hvorfor** det er nødvendigt.
 
-### Vedligeholdelse af politikker
+### 1. Opret og forbered Firebase-projektet
 
-- Alle politikgodkendelser kan nulstilles fra adminportalen via knappen "Politikker" ud for den enkelte medarbejder.
-- Politikhistorik gemmes sammen med den øvrige state i den lokale database og eksporteres via JSON.
+1. **Opret et nyt projekt i Firebase Console**  
+   - _Hvor:_ [https://console.firebase.google.com](https://console.firebase.google.com) → “Add project”.
+   - _Hvorfor:_ Projektet samler Auth, Firestore og Storage under ét ID, som webappen senere refererer til.
 
-## Pauseskærm & billedbank
+2. **Tilføj en Web-app til projektet** (`</>`-ikonet under “Build > Get started”).  
+   - _Hvor:_ Projektoversigten → knappen “Web”.
+   - _Hvorfor:_ Du får den konfigurationsblok (apiKey, authDomain osv.), der skal ind i `firebase-config.js`.
+   - _Reference:_ Kopier koden fra trinets popup til `firebase-config.js` (se næste hovedafsnit).
 
-- Åbn adminportalen og rul til sektionen **"Pauseskærm & billedbank"** for at redigere overskrift, brødtekst, tema og
-  billedmateriale på hvert slide.
-- Klik **"Upload"** for at vælge et nyt foto. Filerne gemmes i mappen `uploads/slides/` på den lokale server, og der
-  returneres en offentlig URL som automatisk bruges i kioskvisningen.
-- Brug pileknapperne til at ændre rækkefølgen. Ændringerne skrives direkte til serverens state, så alle enheder straks
-  ser samme slide-orden.
-- Ønskes en fast standardpakke ved deploy, kan `window.SUBRA_DEFAULTS.slides` i `defaults.js` opdateres – første opstart
-  synker disse værdier til skyen, hvis dokumentet er tomt.
+3. **Aktivér Authentication-udbydere**  
+   - _Hvor:_ `Build > Authentication > Sign-in method`.
+   - _Gør:_ Aktivér **Email/Password** (til adminbrugere) og **Anonymous** (til kiosken).
+   - _Hvorfor:_ Kiosken logger ind anonymt og har læse-/skriveadgang til ét Firestore-dokument. Admin-portalen bruger
+     email+kode for sikker administration.
 
-> Hvis virksomheden allerede anvender en anden CDN eller DAM, kan upload-funktionen i `handleSlideUploadChange`
-> udskiftes, så den peger mod det ønskede API. Behold blot den downloadbare URL i state.
+4. **Opret minimum én adminbruger**  
+   - _Hvor:_ `Authentication > Users > Add user`.
+   - _Hvorfor:_ Adminportalen kræver login, før den kan læse/ændre state. Flere admins kan oprettes samme sted.
 
-## QR-selvbetjening
+5. **Opret Cloud Firestore-database**  
+   - _Hvor:_ `Build > Firestore Database > Create database` (Production mode anbefales).
+   - _Hvorfor:_ Hele kioskens state gemmes i dokumentet `kiosks/<stateDocId>` (navne bestemmes i `local-config.js`).
+   - _Reference:_ Efter oprettelsen kan du manuelt tilføje dokumentet `kiosks/subra-hq` hvis du vil seed’e tom struktur.
 
-- QR-koderne genereres automatisk ud fra URL'erne i adminportalens sektion **"QR-selvbetjening"**.
-- Angiv et link til en mobilvenlig medarbejder- eller gæsteformular (fx en hosted version af appen, en
-  intranet-PWA eller en Swipedon-løsning). Koderne skabes lokalt i browseren via `qrcodejs` og opdateres på få
-  millisekunder.
-- Tilføj evt. unikke links, så scanninger registreres i analytics eller direkte i backend.
+6. **Opsæt Firestore-sikkerhedsregler** (eksempel)  
+   - _Hvor:_ `Firestore Database > Rules`.
+   - _Hvorfor:_ Sikrer at kun loggede brugere kan læse/ændre state. Justér efter eget behov.
+   - _Eksempelregler:_
+     ```
+     rules_version = '2';
+     service cloud.firestore {
+       match /databases/{database}/documents {
+         match /kiosks/{kioskId} {
+           allow read: if true; // kiosken må læse uden login (offentlig skærm)
+           allow write: if request.auth != null; // kræver auth (admin eller anonym kiosk)
+         }
+       }
+     }
+     ```
+     > Ønsker du at begrænse anonyme skriverettigheder yderligere, kan du udvide reglen med `request.auth.token.firebase.
+     > sign_in_provider == "anonymous" && request.auth.uid.startsWith("kiosk-")` eller lignende.
 
-Gæster og medarbejdere kan altså enten benytte hovedskærmen eller scanne en kode for at tjekke ind/out på deres egen
-enhed. Når en gæst registrerer sig via koden, rammer de samme workflow som på skærmen, og værten kan fortsat få en
-notifikation via `notifyHost`-hooket.
+7. **Aktivér Firebase Storage**  
+   - _Hvor:_ `Build > Storage > Get started`.
+   - _Hvorfor:_ Slides/uploadede billeder gemmes her. Standardbucket-navnet (`<projekt-id>.appspot.com`) bruges i
+     `firebase-config.js`.
 
-## Rapporter & statistik
+8. **Opdater Storage-regler** (minimum)  
+   - _Hvor:_ `Storage > Rules`.
+   - _Forslag:_
+     ```
+     rules_version = '2';
+     service firebase.storage {
+       match /b/{bucket}/o {
+         match /screensaver/{kioskId}/{allPaths=**} {
+           allow read; // kiosken må hente billeder uden auth
+           allow write: if request.auth != null; // kræver login (admin eller anonym kiosk)
+         }
+       }
+     }
+     ```
+     - _Hvorfor:_ Forhindrer uautoriserede uploads, men lader slides blive hentet offentligt af kioskvisningen.
 
-- Adminportalen viser et overblik over nøgletal (på kontoret, remote, fravær, gæster i dag osv.) baseret på den lokale
-  state og den indbyggede log.
-- Under **"Aktivitetslog"** kan du filtrere på afdelinger eller hændelsestyper og få vist tidsstemplede events.
-- Brug sektionen **"Dataudtræk"** til at downloade CSV med medarbejderstatus og/eller gæstecheck-ins filtreret på
-  dato-intervaller og specifikke medarbejdere. Filen kan importeres i Excel, Google Sheets eller BI-systemer.
+### 2. Forbind projektet til denne kodebase
 
-## Assets & layout
+1. **Udfyld `firebase-config.js`**  
+   - _Hvor:_ Projektroden → filen `firebase-config.js` (kopiér `firebase-config.example.js`).
+   - _Gør:_ Indsæt de værdier du modtog i trin 1.2 (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`).
+   - _Hvorfor:_ Filen eksponerer `window.SUBRA_FIREBASE_CONFIG`, som `firebase-adapter.js` læser ved init.
 
-- Logoet ligger i `assets/logo.svg` og vises nu uden baggrund eller skygge på pauseskærmen, så transparente filer står
-  frit oven på billederne.
-- Alle slides gemmes i `uploads/slides/` via backend'en, mens medarbejderfotos typisk hostes eksternt (CDN, DAM eller
-  offentlige links) og blot refereres via URL.
-- Layoutet er optimeret til 16:9 i højformat (1080×1920). Når appen åbnes på en anden opløsning, centreres den med
-  samme proportioner.
+2. **Justér `local-config.js`**  
+   - _Gør:_ Opdatér `stateCollection`, `stateDocId` og `storageFolder`, så de matcher dine Firebase-ruter.
+   - _Hvorfor:_ Disse værdier afgør hvilket Firestore-dokument (fx `kiosks/subra-hq`) og hvilken Storage-mappe
+     (`screensaver/subra-hq`) kiosken/admin læser/skrives til.
+   - _Ekstra:_ `authMode: 'anonymous'` betyder, at kiosken logger ind anonymt. Ændr til fx `'none'` hvis du vil
+     håndtere login manuelt.
 
-## Videre udvikling
+3. **Del konfigurationen med GitHub Pages**  
+   - `firebase-config.js` indeholder ingen hemmeligheder (Firebase Web API keys er offentlige), så filen må gerne ligge i repoet.
+   - Hvis du bruger flere miljøer, kan du have forskellige versioner af `firebase-config.js` på forskellige grene.
 
-- Tilføj integrationer til virksomhedens øvrige systemer (ERP, HR eller adgangskontrol) for avancerede dashboards og
-  adgangsstyring.
-- Integrér SMS/e-mail notifikationer ved at udvide funktionen `notifyHost` med en egentlig gateway.
-- Udvid QR-workflows med mobilvenlige PWA-visninger eller bank-ID for stærk autentifikation.
-- Kobling til adgangskontrol eller brandalarmering så hurtig handling påvirker døre og beskeder automatisk.
+### 3. Deploy eller kør lokalt
+
+- **Lokalt (uden backend)**  
+  - Åbn `index.html` eller `admin.html` direkte i din browser (evt. via `npx serve .`).
+  - Login i admin-portalen med den bruger du oprettede i Authentication → brug portalen til at indtaste rigtige data.
+  - Kiosken lytter automatisk efter ændringer i Firestore.
+
+- **GitHub Pages**
+  1. Commit alle filer (inkl. `firebase-config.js` og justeret `local-config.js`).
+  2. Aktivér GitHub Pages (Settings → Pages → Deploy from branch → `main` → `/root`).
+  3. Besøg `https://<brugernavn>.github.io/<repo>/` for kiosken og `.../admin.html` for adminportalen.
+  4. Firebase Auth og Firestore fungerer direkte fra den statiske hosting, fordi al logik ligger i browseren.
+
+> **Tip:** Hvis du vil teste data før GoLive, kan du initialisere Firestore-dokumentet ved at importere
+> `defaults.js`-indholdet via adminportalens “Importer JSON”.
+
+## Daglig drift i Firebase-udgaven
+
+- **Synkronisering**:  
+  - Kiosk (`app.js`) kører realtime-lytning (`enableRealtime: true`). Kan slås fra i `local-config.js`, hvorefter
+    den poler Firestore hvert 15. sekund.
+  - Admin (`admin.js`) gemmer ændringer via `firebaseAdapter.saveState()` og lytter live på samme dokument.
+
+- **Slides**:  
+  - Upload fra admin-portalen sender filen direkte til Storage under `screensaver/<stateDocId>/...` og opdaterer
+    download-URL’en i Firestore. Sletning bruger `firebaseAdapter.deleteSlide`.
+
+- **Medarbejdere & gæster**:  
+  - Alt data (employees, guests, logs, qrLinks, policyLinks) ligger i samme Firestore-dokument. Eksport (CSV/JSON)
+    hentes direkte fra den lokale state i browseren.
+
+- **Sikkerhed**:  
+  - Kun brugere der er logget ind (anonymt eller med email/kode) får lov til at skrive. Finjustér reglerne hvis kun
+    bestemte konti skal have rettigheder til bestemte kiosker.
+
+## Tilpasning
+
+- **Defaults**: `defaults.js` indeholder demo-data. De bliver brugt som seed hvis Firestore-dokumentet er tomt.
+- **Temaer**: Slides bruger `SLIDE_THEMES` i `app.js`/`admin.js`. Tilføj nye entries for flere farvetemaer.
+- **Realtime**: Sæt `enableRealtime` til `false` i `local-config.js` hvis du vil reducere Firestore-read belastning.
+- **Egne uploads**: Udskift `firebaseAdapter.uploadSlide` i `firebase-adapter.js` hvis du ønsker at bruge et andet CDN.
+
+## Fejlfinding
+
+- “Firebase er ikke konfigureret …” → Kontroller at `firebase-config.js` er udfyldt og indlæst før `firebase-adapter.js`.
+- “Kunne ikke logge ind anonymt” → Sørg for at Anonymous sign-in er aktiveret i Authentication.
+- “permission-denied” i konsollen → Justér Firestore/Storage reglerne så de matcher dine auth-krav.
+- Slides vises ikke → Kontroller at Storage-reglerne tillader `allow read` for skærmens mappe, og at download-URL’en
+  findes i Firestore under `state.screensaver.slides[].image`.
 
 ## Teknologi
 
 - Ren HTML, CSS og JavaScript uden build-step.
-- Designstil kombinerer "Apple crisp" (bløde skygger, glas-effekter) og nordisk minimalisme.
+- Firebase SDK (App/Auth/Firestore/Storage) via CDN.
+- `firebase-adapter.js` centraliserer login, realtime-lytning og filupload, så både kiosk og admin deler logik.
 
 ## Licens
 

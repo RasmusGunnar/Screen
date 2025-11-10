@@ -1,7 +1,8 @@
 const INACTIVITY_TIMEOUT = 60000; // 60 sekunder før pauseskærm
+const firebaseAdapter = window.SubraFirebase || null;
 let LOCAL_CONFIG = null;
-let API_BASE_URL = '';
-let KIOSK_SERVICE_TOKEN = '';
+let firebaseReady = false;
+let firebaseUnsubscribe = null;
 let lastSyncedAt = null;
 let syncTimer = null;
 const POLL_INTERVAL = 15000;
@@ -53,8 +54,9 @@ const SUMMARY_EMPTY_MESSAGES = {
 
 function applyLocalConfig(config) {
   LOCAL_CONFIG = config || {};
-  API_BASE_URL = LOCAL_CONFIG.apiBaseUrl || '';
-  KIOSK_SERVICE_TOKEN = LOCAL_CONFIG.kioskServiceToken || '';
+  if (firebaseAdapter) {
+    firebaseAdapter.configure(LOCAL_CONFIG.firebase || {});
+  }
 }
 
 let state = ensureStateDefaults();
@@ -207,6 +209,26 @@ function cloneState(source = state) {
 }
 
 async function bootstrapRemoteState() {
+  if (!firebaseAdapter) {
+    appendSyncOutput('Firebase er ikke indlæst. Viser kun lokale data.');
+    return;
+  }
+
+  firebaseAdapter.init(LOCAL_CONFIG?.firebase || {});
+
+  if (!firebaseAdapter.isReady()) {
+    appendSyncOutput('Firebase er ikke konfigureret endnu. Opdater firebase-config.js.');
+    return;
+  }
+
+  try {
+    await firebaseAdapter.ensureKioskAuth(LOCAL_CONFIG?.kiosk?.authMode || 'anonymous');
+    firebaseReady = firebaseAdapter.isReady();
+  } catch (error) {
+    appendSyncOutput(`Kunne ikke logge ind i Firebase: ${error.message}`);
+    return;
+  }
+
   await fetchRemoteState(true);
   startSyncLoop();
 }
@@ -215,13 +237,49 @@ function commitState(nextState) {
   state = ensureStateDefaults(nextState || state);
   state.updatedAt = new Date().toISOString();
   state.settings = state.settings || {};
-  state.settings.kiosk = state.settings.kiosk || { id: 'local' };
+  state.settings.kiosk = state.settings.kiosk || {};
+  state.settings.kiosk.id =
+    state.settings.kiosk.id || LOCAL_CONFIG?.firebase?.stateDocId || 'local';
   state.settings.kiosk.lastSynced = state.updatedAt;
-  void pushStateToServer();
+  void pushStateToFirebase();
 }
 
 function startSyncLoop() {
   if (typeof window === 'undefined') return;
+  if (!firebaseReady) {
+    return;
+  }
+
+  if (LOCAL_CONFIG?.firebase?.enableRealtime) {
+    if (firebaseUnsubscribe) {
+      firebaseUnsubscribe();
+    }
+    try {
+      firebaseUnsubscribe = firebaseAdapter.subscribeToState((remoteState) => {
+        if (!remoteState) {
+          return;
+        }
+        const normalized = ensureStateDefaults(remoteState);
+        if (lastSyncedAt && normalized.updatedAt === lastSyncedAt) {
+          return;
+        }
+        state = normalized;
+        lastSyncedAt = state.updatedAt;
+        renderSlides();
+        renderAll();
+        updateQrCodes();
+        updateGuestPolicyLink();
+      });
+    } catch (error) {
+      appendSyncOutput(`Realtime-opdatering fejlede: ${error.message}`);
+    }
+    return;
+  }
+
+  if (firebaseUnsubscribe) {
+    firebaseUnsubscribe();
+    firebaseUnsubscribe = null;
+  }
   if (syncTimer) {
     window.clearInterval(syncTimer);
   }
@@ -235,68 +293,57 @@ function stopSyncLoop() {
     window.clearInterval(syncTimer);
     syncTimer = null;
   }
+  if (firebaseUnsubscribe) {
+    firebaseUnsubscribe();
+    firebaseUnsubscribe = null;
+  }
 }
 
 async function fetchRemoteState(force = false) {
+  if (!firebaseReady || !firebaseAdapter?.isReady()) {
+    return;
+  }
+
   try {
-    const response = await fetch(`${API_BASE_URL}/api/state`, { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const payload = await response.json();
-    if (!payload?.state) {
+    const remoteState = await firebaseAdapter.fetchState();
+    if (!remoteState) {
+      appendSyncOutput('Ingen data fundet i Firestore endnu – bruger lokale defaults.');
       return;
     }
 
-    if (!force && lastSyncedAt && payload.state.updatedAt && payload.state.updatedAt === lastSyncedAt) {
+    if (!force && lastSyncedAt && remoteState.updatedAt && remoteState.updatedAt === lastSyncedAt) {
       return;
     }
 
-    state = ensureStateDefaults(payload.state);
+    state = ensureStateDefaults(remoteState);
     lastSyncedAt = state.updatedAt;
     renderSlides();
     renderAll();
     updateQrCodes();
     updateGuestPolicyLink();
   } catch (error) {
-    appendSyncOutput(`Kunne ikke hente data fra serveren: ${error.message}`);
+    appendSyncOutput(`Kunne ikke hente data fra Firebase: ${error.message}`);
   }
 }
 
-async function pushStateToServer() {
+async function pushStateToFirebase() {
   if (isSyncing) return;
+  if (!firebaseReady || !firebaseAdapter?.isReady()) {
+    appendSyncOutput('Firebase er ikke klar – ændringer gemmes lokalt.');
+    return;
+  }
   isSyncing = true;
 
   try {
-    const body = JSON.stringify({ state: serializeForStorage(state) });
-    const headers = { 'Content-Type': 'application/json' };
-    if (KIOSK_SERVICE_TOKEN) {
-      headers['X-Service-Token'] = KIOSK_SERVICE_TOKEN;
-    }
-
-    const response = await fetch(`${API_BASE_URL}/api/state`, {
-      method: 'PUT',
-      headers,
-      body,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const payload = await response.json();
-    if (payload?.state) {
-      state = ensureStateDefaults(payload.state);
-      lastSyncedAt = state.updatedAt;
-      renderSlides();
-      renderAll();
-    }
-
-    appendSyncOutput('Ændringer gemt på SUBRAs lokale server.');
+    const saved = await firebaseAdapter.saveState(serializeForStorage(state));
+    state = ensureStateDefaults(saved);
+    lastSyncedAt = state.updatedAt;
+    renderSlides();
+    renderAll();
+    appendSyncOutput('Ændringer gemt i Firebase.');
   } catch (error) {
-    console.error('Kunne ikke gemme state til serveren', error);
-    appendSyncOutput(`Kunne ikke gemme til den lokale server: ${error.message}`);
+    console.error('Kunne ikke gemme state til Firebase', error);
+    appendSyncOutput(`Kunne ikke gemme til Firebase: ${error.message}`);
   } finally {
     isSyncing = false;
   }
@@ -1147,39 +1194,19 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    const dataUrl = await readFileAsDataUrl(file);
-    const headers = { 'Content-Type': 'application/json' };
-    if (KIOSK_SERVICE_TOKEN) {
-      headers['X-Service-Token'] = KIOSK_SERVICE_TOKEN;
+    if (!firebaseReady || !firebaseAdapter?.isReady()) {
+      throw new Error('Firebase er ikke konfigureret til uploads');
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/slides/upload`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        id: slide.id,
-        dataUrl,
-        previousPath: slide.storagePath || null,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const payload = await response.json();
-    if (!payload?.imageUrl) {
-      throw new Error('Ugyldigt svar fra serveren');
-    }
-
-    slide.image = payload.imageUrl;
-    slide.storagePath = payload.storagePath || null;
+    const upload = await firebaseAdapter.uploadSlide(file);
+    slide.image = upload.downloadURL;
+    slide.storagePath = upload.storagePath || null;
     slide.updatedAt = new Date().toISOString();
 
     renderSlides();
     renderScreensaverAdmin();
     commitState();
-    appendSyncOutput('Opdaterede pauseskærmsbilledet via SUBRAs lokale server.');
+    appendSyncOutput('Opdaterede pauseskærmsbilledet i Firebase Storage.');
   } catch (error) {
     console.error('Fejl ved upload af slide', error);
     appendSyncOutput(`Kunne ikke uploade billede: ${error.message}`);
@@ -1302,27 +1329,13 @@ function handleImport(event) {
   elements.importFile.value = '';
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error || new Error('Kunne ikke læse filen'));
-    reader.readAsDataURL(file);
-  });
-}
-
 function removeSlideAsset(storagePath) {
   if (!storagePath) return;
-  const headers = { 'Content-Type': 'application/json' };
-  if (KIOSK_SERVICE_TOKEN) {
-    headers['X-Service-Token'] = KIOSK_SERVICE_TOKEN;
+  if (!firebaseReady || !firebaseAdapter?.isReady()) {
+    return;
   }
 
-  void fetch(`${API_BASE_URL}/api/slides/remove`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ storagePath }),
-  }).catch((error) => {
+  void firebaseAdapter.deleteSlide(storagePath).catch((error) => {
     console.warn('Kunne ikke slette slide-asset', error);
   });
 }
