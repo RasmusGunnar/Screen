@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="da">
 <head>
+  <!-- 1) Supabase SDK (UMD) giver globalen `supabase` -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" defer></script>
+
+<!-- 2) Din konfig-fil, der sender CustomEvent -->
+<script src="supabase-config.js" defer></script>
+
+<!-- 3) Din appkode -->
+<script src="admin.js" defer></script>
+
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SUBRA Workplace Arrival Portal</title>
