@@ -1,66 +1,190 @@
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css" />
-  <script
-    defer
-    src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
-    integrity="sha512-J7co8U8AwrKyEBkuuRsYwk1mGUZXoq+X0eZomPFcQyHfjzbIdtk1t7Ww5x0R6FK5j3QpNyITG8Jw3HgXwYv4sA=="
-    crossorigin="anonymous"
-  ></script>
-  <script
-    defer
-    src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"
-    integrity="sha384-jWusv8NTmnJmUne3PS2hvKBgrD2D9jWvlaeyT0IPqrUKnSIMyd4JXy0UETKb4Sqw"
-    crossorigin="anonymous"
-  ></script>
-  <script
-    defer
-    src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"
-    integrity="sha384-FeX9RmSTc8TdfgKP8X7LlO9WW0hUeH5zO1viJ7W5MNCWq/AAP4qMqaJ+IgvtnygD"
-    crossorigin="anonymous"
-  ></script>
-  <script
-    defer
-    src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"
-    integrity="sha384-7czfNEPoPFSpK08Z0P6prnkrGHHrtYZ91IQNmamXSDw54iW3PL9Cplr8SHDtsPXf"
-    crossorigin="anonymous"
-  ></script>
-  <script
-    defer
-    src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"
-    integrity="sha384-E0+2eyp0r5m05ye4GCj6FahOZGErI9k+uE9lCjOvXFzgZbhEoP0ewUQFv1XrWnqq"
-    crossorigin="anonymous"
-  ></script>
-  <script defer src="firebase-config.js"></script>
-  <script defer src="local-config.js"></script>
-  <script defer src="defaults.js"></script>
-  <script defer src="firebase-adapter.js"></script>
-  <script defer src="app.js"></script>
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SUBRA Workplace Arrival Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<div id="app-container">
-@@ -125,9 +90,7 @@ <h2>Registrering af gæster</h2>
-<label class="checkbox">
-<input type="checkbox" id="guest-nda" required />
-Jeg har læst og accepterer
-                <a id="guest-nda-link" class="policy-link" href="#" target="_blank" rel="noopener"
-                  >SUBRAs NDA</a
-                >.
+  <div id="app-container">
+    <section id="screensaver" class="screensaver">
+      <p class="screensaver-hint">Tryk for at starte registreringen</p>
+    </section>
+
+    <template id="screensaver-slide-template">
+      <div class="slide">
+        <div class="overlay overlay-top-left">
+          <img src="assets/logo.svg" alt="SUBRA" class="logo" />
+        </div>
+        <div class="overlay overlay-bottom-center">
+          <p class="welcome-tagline"></p>
+          <p class="welcome-instruction"></p>
+        </div>
+      </div>
+    </template>
+
+    <main id="main-app" class="hidden">
+      <header class="app-header">
+        <div class="brand">
+          <img src="assets/logo.svg" alt="SUBRA" class="logo" />
+          <div class="brand-copy">
+            <h1>SUBRA Workplace Arrival Portal</h1>
+            <p class="subline">Oversigt over medarbejdere, gæster og tilstedeværelse</p>
+          </div>
+        </div>
+        <div class="header-widgets">
+          <div class="widget clock" id="live-clock"></div>
+          <div class="widget weather">
+            <p>København</p>
+            <p class="temperature">19°C · Skyet</p>
+          </div>
+          <a class="ghost-button" href="admin.html" target="_blank" rel="noopener">Admin login</a>
+        </div>
+      </header>
+
+      <section class="status-summary" id="status-summary">
+        <button type="button" class="summary-card" data-summary-target="onsite">
+          <span class="summary-label">På kontoret</span>
+          <span class="summary-value" data-summary="onsite">0</span>
+        </button>
+        <button type="button" class="summary-card" data-summary-target="remote">
+          <span class="summary-label">Arbejder hjemmefra</span>
+          <span class="summary-value" data-summary="remote">0</span>
+        </button>
+        <button type="button" class="summary-card" data-summary-target="away">
+          <span class="summary-label">Fravær</span>
+          <span class="summary-value" data-summary="away">0</span>
+        </button>
+        <button type="button" class="summary-card" data-summary-target="guests">
+          <span class="summary-label">Gæster registreret i dag</span>
+          <span class="summary-value" data-summary="guests">0</span>
+        </button>
+      </section>
+
+      <section class="interaction-panel">
+        <div class="guest-card">
+          <h2>Registrering af gæster</h2>
+          <form id="guest-form">
+            <div class="form-group">
+              <label for="guest-name">Navn</label>
+              <input id="guest-name" required placeholder="Gæstens navn" />
+            </div>
+            <div class="form-group">
+              <label for="guest-company">Virksomhed</label>
+              <input id="guest-company" placeholder="Virksomhed (valgfrit)" />
+            </div>
+            <div class="form-group">
+              <label for="guest-host">Besøger</label>
+              <select id="guest-host" required></select>
+            </div>
+            <div class="form-group">
+              <label for="guest-purpose">Formål</label>
+              <input id="guest-purpose" placeholder="Møde, interview, leverance..." />
+            </div>
+            <fieldset class="form-group policy-checkboxes">
+              <legend>Politikker</legend>
+              <label class="checkbox">
+                <input type="checkbox" id="guest-nda" required />
+                Jeg har læst og accepterer
                 <a id="guest-nda-link" class="policy-link" href="#" target="_blank" rel="noopener">SUBRAs NDA</a>.
-</label>
-<label class="checkbox">
-<input type="checkbox" id="guest-it" required />
-@@ -215,7 +178,6 @@ <h2 id="modal-title">Opdater status</h2>
-</div>
-</div>
+              </label>
+              <label class="checkbox">
+                <input type="checkbox" id="guest-it" required />
+                Jeg accepterer retningslinjerne for IT- og datasikkerhed.
+              </label>
+            </fieldset>
+            <button type="submit" class="primary">Registrer gæst</button>
+            <p class="form-hint">Den valgte medarbejder får en notifikation (simuleret).</p>
+          </form>
+          <div class="guest-log" id="guest-log"></div>
+        </div>
+        <div class="self-service-card">
+          <h2>Hurtig selvbetjening</h2>
+          <p>Scan QR-koden for at åbne medarbejdersiden på din egen telefon.</p>
+          <div class="qr-grid single">
+            <figure>
+              <div id="employee-qr" class="qr-canvas" role="img" aria-label="QR-kode for medarbejdere"></div>
+              <figcaption>
+                Medarbejder check-ind/out
+                <small id="employee-qr-link" class="qr-link"></small>
+              </figcaption>
+            </figure>
+          </div>
+          <p class="qr-hint">
+            QR-koden opdateres automatisk når du ændrer linket i adminportalen eller synkroniserer via Firebase.
+          </p>
+        </div>
+      </section>
 
+      <section class="departments" id="departments"></section>
 
-<div id="summary-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="summary-title">
-<div class="modal-content summary-modal">
-<button class="modal-close" aria-label="Luk" id="summary-close">&times;</button>
-@@ -224,5 +186,40 @@ <h2 id="summary-title">Detaljer</h2>
-</div>
-</div>
+      <section class="quick-actions-bar" aria-label="Hurtige handlinger">
+        <div class="quick-actions">
+          <button class="primary" data-quick="checkin">Tjek alle ind (brandøvelse)</button>
+          <button class="ghost" data-quick="checkout">Tøm bygningen</button>
+          <button class="ghost" data-quick="rollcall">Evakueringsliste</button>
+        </div>
+      </section>
+
+      <section class="feature-highlight">
+        <h2>Udvidelser inspireret af Swipedon</h2>
+        <ul>
+          <li>Digital log over alle check-ins/-outs og gæstebesøg med tidsstempel.</li>
+          <li>Evakueringsliste i realtid til sikkerhed og compliance.</li>
+          <li>NDA/IT-politik modal ved check-in for både medarbejdere og gæster.</li>
+          <li>QR-koder til hurtig selvbetjening for medarbejdere og gæster.</li>
+          <li>Integration til adgangskontrol eller notifikationssystemer (SMS/mail webhooks).</li>
+        </ul>
+      </section>
+
+      <footer class="app-footer">
+        <p>SUBRA · Workplace Arrival Portal · Designet til 16:9 vertikal skærm</p>
+      </footer>
+    </main>
+  </div>
+
+  <div id="status-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-content">
+      <button class="modal-close" aria-label="Luk" id="modal-close">&times;</button>
+      <h2 id="modal-title">Opdater status</h2>
+      <form id="status-form">
+        <p class="modal-employee" id="modal-employee"></p>
+        <div class="form-group">
+          <label for="status-type">Status</label>
+          <select id="status-type">
+            <option value="onsite">På kontoret</option>
+            <option value="remote">Arbejder hjemme</option>
+            <option value="away">Fravær (sygdom/barsel)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="absence-from">Fravær fra</label>
+          <input type="date" id="absence-from" />
+        </div>
+        <div class="form-group">
+          <label for="absence-to">Fravær til</label>
+          <input type="date" id="absence-to" />
+        </div>
+        <div class="form-group">
+          <label for="status-notes">Noter</label>
+          <textarea id="status-notes" rows="2" placeholder="F.eks. syg, barsel, ferie..."></textarea>
+        </div>
+        <button type="submit" class="primary">Gem</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="summary-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="summary-title">
+    <div class="modal-content summary-modal">
+      <button class="modal-close" aria-label="Luk" id="summary-close">&times;</button>
+      <h2 id="summary-title">Detaljer</h2>
+      <div id="summary-list" class="summary-list"></div>
+    </div>
+  </div>
 
   <!-- ======================= -->
   <!-- SCRIPTS: INDLÆSNINGSORDEN -->
