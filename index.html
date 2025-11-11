@@ -187,7 +187,7 @@
   </div>
 
   <!-- ======================= -->
-  <!-- SCRIPTS: INDLÆSNINGSORDEN -->
+  <!-- SCRIPTS: RIGTIG RÆKKEFØLGE -->
   <!-- 1) 3. parts libs (QR)   -->
   <!-- 2) Firebase SDK (compat)-->
   <!-- 3) Konfig (vores filer) -->
@@ -195,30 +195,20 @@
   <!-- ======================= -->
 
   <!-- 1) QRCode lib -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
-          integrity="sha512-J7co8U8AwrKyEBkuuRsYwk1mGUZXoq+X0eZomPFcQyHfjzbIdtk1t7Ww5x0R6FK5j3QpNyITG8Jw3HgXwYv4sA=="
-          crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
-  <!-- 2) Firebase SDK (compat build) -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"
-          integrity="sha384-jWusv8NTmnJmUne3PS2hvKBgrD2D9jWvlaeyT0IPqrUKnSIMyd4JXy0UETKb4Sqw"
-          crossorigin="anonymous"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"
-          integrity="sha384-FeX9RmSTc8TdfgKP8X7LlO9WW0hUeH5zO1viJ7W5MNCWq/AAP4qMqaJ+IgvtnygD"
-          crossorigin="anonymous"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"
-          integrity="sha384-7czfNEPoPFSpK08Z0P6prnkrGHHrtYZ91IQNmamXSDw54iW3PL9Cplr8SHDtsPXf"
-          crossorigin="anonymous"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"
-          integrity="sha384-E0+2eyp0r5m05ye4GCj6FahOZGErI9k+uE9lCjOvXFzgZbhEoP0ewUQFv1XrWnqq"
-          crossorigin="anonymous"></script>
+  <!-- 2) Firebase SDK (compat) – UDEN integrity/crossorigin -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
-  <!-- 3) Vores konfig (skal komme før adapter/app) -->
+  <!-- 3) Konfig -->
   <script src="firebase-config.js"></script>
   <script src="local-config.js"></script>
   <script src="defaults.js"></script>
 
-  <!-- 4) Firebase adapter + selve appen -->
+  <!-- 4) Adapter + app -->
   <script src="firebase-adapter.js"></script>
   <script src="app.js"></script>
 </body>
