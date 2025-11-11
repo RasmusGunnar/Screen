@@ -1,29 +1,18 @@
+// local-config.js
+// Peger på de dokumenter/buckets, kiosk + admin skal bruge
 window.SUBRA_LOCAL_CONFIG = {
-  firebase: {
-    /**
-     * Firestore collection og dokument der holder hele kioskens state.
-     * Justér så det matcher din Firebase-struktur.
-     */
-    stateCollection: 'kiosks',
-    stateDocId: 'subra-hq',
-    /**
-     * Mappe i Firebase Storage hvor slides/uploadede billeder gemmes.
-     * Mappen oprettes automatisk ved første upload.
-     */
-    storageFolder: 'screensaver/subra-hq',
-    /**
-     * Aktiver true for at bruge realtime-lyttere i stedet for polling.
-     */
-    enableRealtime: true,
-  },
-  kiosk: {
-    /**
-     * Kiosken logger ind anonymt i Firebase Auth. Sørg for at aktivere
-     * Anonymous sign-in i Firebase-konsollen.
-     */
-    authMode: 'anonymous',
-  },
-  admin: {
-    hint: 'Log ind med din SUBRA Firebase-konto',
-  },
+  // Firestore: state ligger her
+  stateCollection: "kiosks",
+  stateDocId: "subra-hq",              // skift navn hvis du vil (fx "hq" eller "kalender")
+  // Storage: slides/billeder ligger her
+  storageFolder: "screensaver/subra-hq", // bør matche stateDocId
+
+  // Kioskens login
+  authMode: "anonymous",
+
+  // (valgfrit) ruter – brugt til interne links/hints
+  routes: {
+    kiosk: "index.html",
+    admin: "admin.html"
+  }
 };
