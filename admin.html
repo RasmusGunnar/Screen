@@ -67,6 +67,8 @@
                     <option value="all">Alle events</option>
                     <option value="status-change">Statusændringer</option>
                     <option value="guest-checkin">Gæster</option>
+                    <option value="employee-update">Medarbejderændringer</option>
+                    <option value="settings-change">Indstillinger</option>
                   </select>
                 </label>
               </div>
@@ -143,6 +145,7 @@
                 <button type="submit" class="primary">Gem medarbejder</button>
                 <button type="button" id="reset-form" class="ghost">Nulstil</button>
               </div>
+              <p id="employee-feedback" class="panel-feedback" aria-live="polite"></p>
             </form>
             <div id="employee-list" class="list"></div>
           </article>
@@ -162,6 +165,7 @@
               <button id="add-slide" class="ghost">Tilføj slide</button>
             </header>
             <div id="screensaver-admin" class="list"></div>
+            <p id="slide-feedback" class="panel-feedback" aria-live="polite"></p>
             <input type="file" id="slide-upload" accept="image/*" hidden />
           </article>
 
@@ -174,6 +178,7 @@
                 <label><span>Medarbejder-URL</span><input id="qr-employee" placeholder="https://" /></label>
               </div>
               <button type="submit" class="primary">Opdater QR-kode</button>
+              <p id="qr-feedback" class="panel-feedback" aria-live="polite"></p>
             </form>
             <div class="qr-preview">
               <p>Aktuelt link:</p>

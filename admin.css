@@ -415,6 +415,10 @@ button.ghost:hover {
   color: var(--muted);
 }
 
+.panel-feedback.error {
+  color: #c62828;
+}
+
 @media (max-width: 768px) {
   .admin-app {
     padding: 32px 16px;
