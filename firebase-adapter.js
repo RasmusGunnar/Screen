@@ -105,7 +105,14 @@
           },
         },
       };
-      await this.getStateDocRef().set(payload, { merge: false });
+      // Brug merge for at bevare evt. felter (fx "owner" eller andre metadata)
+      // som ikke er en del af payload fra admin-appen. Hvis vi overskriver
+      // dokumentet fuldstændigt med `merge: false`, kan mere stramme Firestore-
+      // regler tolke det som et forsøg på at ændre eller slette felter, som
+      // admin-brugeren ikke har rettigheder til. Med `merge: true` opdaterer vi
+      // kun de felter vi sender og lader resten være uændret, hvilket passer
+      // bedre til almindelige write-regler.
+      await this.getStateDocRef().set(payload, { merge: true });
       return payload;
     },
 
