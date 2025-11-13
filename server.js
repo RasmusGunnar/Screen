@@ -174,6 +174,21 @@ function parseCookies(header) {
   return cookies;
 }
 
+function buildCorsHeaders(req) {
+  const origin = req.headers?.origin;
+  if (!origin) {
+    return {
+      'Access-Control-Allow-Origin': '*',
+    };
+  }
+
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Credentials': 'true',
+    Vary: 'Origin',
+  };
+}
+
 function sendJson(res, status, payload, headers = {}) {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
@@ -184,18 +199,24 @@ function sendJson(res, status, payload, headers = {}) {
   res.end(body);
 }
 
-function notFound(res) {
-  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+function notFound(res, headers = {}) {
+  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...headers });
   res.end('Not found');
 }
 
-function forbidden(res) {
-  res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+function forbidden(res, headers = {}) {
+  res.writeHead(403, {
+    'Content-Type': 'application/json; charset=utf-8',
+    ...headers,
+  });
   res.end(JSON.stringify({ ok: false, error: 'forbidden' }));
 }
 
-function methodNotAllowed(res) {
-  res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+function methodNotAllowed(res, headers = {}) {
+  res.writeHead(405, {
+    'Content-Type': 'application/json; charset=utf-8',
+    ...headers,
+  });
   res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
 }
 
@@ -379,9 +400,10 @@ async function requestHandler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   if (url.pathname.startsWith('/api/')) {
+    const corsHeaders = buildCorsHeaders(req);
     if (req.method === 'OPTIONS') {
       res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
+        ...corsHeaders,
         'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type,X-Service-Token',
       });
@@ -393,35 +415,35 @@ async function requestHandler(req, res) {
       if (url.pathname === '/api/state') {
         if (req.method === 'GET') {
           const state = await loadState();
-          sendJson(res, 200, { ok: true, state });
+          sendJson(res, 200, { ok: true, state }, corsHeaders);
           return;
         }
 
         if (req.method === 'PUT') {
           const access = requireWriteAccess(req, res);
           if (!access.allowed) {
-            sendJson(res, 401, { ok: false, error: 'unauthorized' });
+            sendJson(res, 401, { ok: false, error: 'unauthorized' }, corsHeaders);
             return;
           }
 
           const body = await readJsonBody(req);
           if (!body || typeof body !== 'object' || !body.state) {
-            sendJson(res, 400, { ok: false, error: 'invalid_body' });
+            sendJson(res, 400, { ok: false, error: 'invalid_body' }, corsHeaders);
             return;
           }
 
           const saved = await saveState(body.state);
-          sendJson(res, 200, { ok: true, state: saved });
+          sendJson(res, 200, { ok: true, state: saved }, corsHeaders);
           return;
         }
 
-        methodNotAllowed(res);
+        methodNotAllowed(res, corsHeaders);
         return;
       }
 
       if (url.pathname === '/api/auth/login') {
         if (req.method !== 'POST') {
-          methodNotAllowed(res);
+          methodNotAllowed(res, corsHeaders);
           return;
         }
 
@@ -430,20 +452,20 @@ async function requestHandler(req, res) {
         const password = (body.password || '').toString();
 
         if (!email || !password) {
-          sendJson(res, 400, { ok: false, error: 'missing_credentials' });
+          sendJson(res, 400, { ok: false, error: 'missing_credentials' }, corsHeaders);
           return;
         }
 
         const admins = await loadAdmins();
         const admin = admins.find((item) => item.email.toLowerCase() === email);
         if (!admin) {
-          sendJson(res, 401, { ok: false, error: 'invalid_credentials' });
+          sendJson(res, 401, { ok: false, error: 'invalid_credentials' }, corsHeaders);
           return;
         }
 
         const hash = hashPassword(password, admin.salt);
         if (hash !== admin.passwordHash) {
-          sendJson(res, 401, { ok: false, error: 'invalid_credentials' });
+          sendJson(res, 401, { ok: false, error: 'invalid_credentials' }, corsHeaders);
           return;
         }
 
@@ -456,14 +478,14 @@ async function requestHandler(req, res) {
           res,
           200,
           { ok: true, admin: sanitizeAdmin(admin) },
-          { 'Set-Cookie': cookie }
+          { ...corsHeaders, 'Set-Cookie': cookie }
         );
         return;
       }
 
       if (url.pathname === '/api/auth/logout') {
         if (req.method !== 'POST') {
-          methodNotAllowed(res);
+          methodNotAllowed(res, corsHeaders);
           return;
         }
 
@@ -477,76 +499,79 @@ async function requestHandler(req, res) {
           res,
           200,
           { ok: true },
-          { 'Set-Cookie': `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0` }
+          {
+            ...corsHeaders,
+            'Set-Cookie': `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`,
+          }
         );
         return;
       }
 
       if (url.pathname === '/api/auth/session') {
         if (req.method !== 'GET') {
-          methodNotAllowed(res);
+          methodNotAllowed(res, corsHeaders);
           return;
         }
 
         const session = getSession(req);
         if (!session) {
-          sendJson(res, 401, { ok: false, error: 'unauthorized' });
+          sendJson(res, 401, { ok: false, error: 'unauthorized' }, corsHeaders);
           return;
         }
 
-        sendJson(res, 200, { ok: true, admin: sanitizeAdmin(session) });
+        sendJson(res, 200, { ok: true, admin: sanitizeAdmin(session) }, corsHeaders);
         return;
       }
 
       if (url.pathname === '/api/slides/upload') {
         const access = requireWriteAccess(req, res);
         if (!access.allowed) {
-          sendJson(res, 401, { ok: false, error: 'unauthorized' });
+          sendJson(res, 401, { ok: false, error: 'unauthorized' }, corsHeaders);
           return;
         }
 
         if (req.method !== 'POST') {
-          methodNotAllowed(res);
+          methodNotAllowed(res, corsHeaders);
           return;
         }
 
         const body = await readJsonBody(req);
         const result = await handleSlideUpload(body);
-        sendJson(res, 200, { ok: true, ...result });
+        sendJson(res, 200, { ok: true, ...result }, corsHeaders);
         return;
       }
 
       if (url.pathname === '/api/slides/remove') {
         const access = requireWriteAccess(req, res);
         if (!access.allowed) {
-          sendJson(res, 401, { ok: false, error: 'unauthorized' });
+          sendJson(res, 401, { ok: false, error: 'unauthorized' }, corsHeaders);
           return;
         }
 
         if (req.method !== 'POST') {
-          methodNotAllowed(res);
+          methodNotAllowed(res, corsHeaders);
           return;
         }
 
         const body = await readJsonBody(req);
         try {
           await handleSlideRemove(body);
-          sendJson(res, 200, { ok: true });
+          sendJson(res, 200, { ok: true }, corsHeaders);
         } catch (error) {
           console.warn('Kunne ikke fjerne slide-asset', error);
-          sendJson(res, 400, { ok: false, error: error.message || 'unknown_error' });
+          sendJson(res, 400, { ok: false, error: error.message || 'unknown_error' }, corsHeaders);
         }
         return;
       }
 
-      notFound(res);
+      notFound(res, corsHeaders);
     } catch (error) {
       console.error('API error', error);
       if (error.message === 'invalid_json') {
-        sendJson(res, 400, { ok: false, error: 'invalid_json' });
+        sendJson(res, 400, { ok: false, error: 'invalid_json' }, corsHeaders);
         return;
       }
-      sendJson(res, 500, { ok: false, error: 'internal_error' });
+      sendJson(res, 500, { ok: false, error: 'internal_error' }, corsHeaders);
     }
     return;
   }
