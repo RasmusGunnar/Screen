@@ -1197,12 +1197,80 @@
   }
 
   function serializeForStorage(data) {
-    return JSON.parse(
-      JSON.stringify(data, (key, value) => {
-        if (value === undefined) return null;
+    const seen = new WeakSet();
+
+    function clean(value) {
+      if (value === undefined) {
+        return undefined;
+      }
+
+      if (value === null) {
+        return null;
+      }
+
+      if (typeof value === "function") {
+        return undefined;
+      }
+
+      if (value instanceof Date) {
+        return value.toISOString();
+      }
+
+      if (isFirestoreNativeValue(value)) {
         return value;
-      })
-    );
+      }
+
+      if (Array.isArray(value)) {
+        return value.map((entry) => {
+          const cleaned = clean(entry);
+          return cleaned === undefined ? null : cleaned;
+        });
+      }
+
+      if (typeof value === "object") {
+        if (seen.has(value)) {
+          return null;
+        }
+        seen.add(value);
+        const result = {};
+        Object.keys(value).forEach((key) => {
+          const cleaned = clean(value[key]);
+          if (cleaned !== undefined) {
+            result[key] = cleaned;
+          }
+        });
+        seen.delete(value);
+        return result;
+      }
+
+      return value;
+    }
+
+    function isFirestoreNativeValue(value) {
+      if (!value || !window.firebase || !window.firebase.firestore) {
+        return false;
+      }
+      const firestore = window.firebase.firestore;
+      if (firestore.Timestamp && value instanceof firestore.Timestamp) {
+        return true;
+      }
+      if (firestore.GeoPoint && value instanceof firestore.GeoPoint) {
+        return true;
+      }
+      if (firestore.DocumentReference && value instanceof firestore.DocumentReference) {
+        return true;
+      }
+      if (firestore.Blob && value instanceof firestore.Blob) {
+        return true;
+      }
+      // FieldValue-sentinels identificeres ved et internt flag `_methodName`
+      if (typeof value === "object" && (value._methodName || value._isFieldValue)) {
+        return true;
+      }
+      return false;
+    }
+
+    return clean(data);
   }
 
   function escapeHtml(value) {
