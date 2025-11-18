@@ -82,6 +82,7 @@
       return unsubscribe;
     },
     async signInWithPassword(email, password) {
+      const res = await fetch(this.buildUrl('/api/auth/login'), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
