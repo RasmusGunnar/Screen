@@ -455,7 +455,7 @@ function renderSlides() {
       slideNode.className = 'slide';
       slideNode.innerHTML = `
         <div class="overlay overlay-top-left">
-          <img src="assets/logo.svg" alt="SUBRA" class="logo" />
+          <img src="assets/LOGO_SUBRA_sort_transp-web.png" alt="SUBRA" class="logo" />
         </div>
         <div class="overlay overlay-bottom-center">
           <p class="welcome-tagline"></p>
