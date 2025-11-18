@@ -120,6 +120,18 @@
     el.classList.remove("error");
   }
 
+  function formatLoginError(error) {
+    if (!error) return "Kunne ikke logge ind. Prøv igen.";
+    const code = (error.code || error.message || "").toString();
+    if (code.includes("invalid_credentials")) {
+      return "Forkert email eller adgangskode.";
+    }
+    if (code.includes("missing_credentials")) {
+      return "Indtast både email og adgangskode.";
+    }
+    return "Login mislykkedes. Tjek forbindelsen og prøv igen.";
+  }
+
   if (backendMode === "local") {
     setHint("Standardlogin (lokal backend): admin@subra.dk / admin");
   }
@@ -131,9 +143,9 @@
     if (user) {
       setError("");
       setHint("");
-        if (activeAdmin) {
-          activeAdmin.textContent = user.name || user.email || `(anon) ${user.uid}`;
-        }
+      if (activeAdmin) {
+        activeAdmin.textContent = user.name || user.email || `(anon) ${user.uid}`;
+      }
       hide(loginView);
       show(adminMain);
       await reloadState();
@@ -154,11 +166,18 @@
       setHint("Logger ind …");
       const email = loginEmail?.value.trim();
       const pass = loginPass?.value;
+      if (!email || !pass) {
+        setHint("");
+        setError("Indtast både email og adgangskode.");
+        return;
+      }
       try {
         await adapter.signInWithPassword(email, pass);
         setHint("");
       } catch (err) {
         setHint("");
+        console.error("Login fejlede", err);
+        setError(formatLoginError(err));
       }
     });
   }
