@@ -1104,6 +1104,22 @@
       logs,
       guests,
       guestsToday: guests,
+      visitors: {
+        timeline: Array.isArray(source.visitors?.timeline) ? source.visitors.timeline : [],
+        remembered: Array.isArray(source.visitors?.remembered) ? source.visitors.remembered : [],
+        preregistrations: Array.isArray(source.visitors?.preregistrations)
+          ? source.visitors.preregistrations
+          : [],
+      },
+      deliveries: Array.isArray(source.deliveries) ? source.deliveries : [],
+      spaces: {
+        bookings: Array.isArray(source.spaces?.bookings) ? source.spaces.bookings : [],
+        resources: Array.isArray(source.spaces?.resources) ? source.spaces.resources : [],
+      },
+      evacuation: {
+        lastRefreshed: source.evacuation?.lastRefreshed || null,
+        roster: Array.isArray(source.evacuation?.roster) ? source.evacuation.roster : [],
+      },
       screensaver: {
         ...(source.screensaver || {}),
         slides,

@@ -177,6 +177,20 @@ function ensureStateDefaults(data = {}) {
     employees,
     guests: data.guests || [],
     logs: data.logs || [],
+    visitors: {
+      timeline: data.visitors?.timeline || [],
+      remembered: data.visitors?.remembered || [],
+      preregistrations: data.visitors?.preregistrations || [],
+    },
+    deliveries: data.deliveries || [],
+    spaces: {
+      bookings: data.spaces?.bookings || [],
+      resources: data.spaces?.resources || [],
+    },
+    evacuation: {
+      lastRefreshed: data.evacuation?.lastRefreshed || null,
+      roster: data.evacuation?.roster || [],
+    },
     screensaver: {
       slides: normalizeSlides(data.screensaver?.slides || data.slides || defaultSlides),
     },
