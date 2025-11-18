@@ -10,7 +10,7 @@ window.SUBRA_LOCAL_CONFIG = {
   // Backend-tilstand
   //  - "firebase" (standard): brug Firebase Auth/Firestore/Storage
   //  - "local": brug den indbyggede Node-backend (/api/state, /api/auth, /api/slides)
-  backendMode: "local",
+  backendMode: "firebase",
 
   // Kioskens login
   authMode: "anonymous",
