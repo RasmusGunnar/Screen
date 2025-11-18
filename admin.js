@@ -120,18 +120,9 @@
     el.classList.remove("error");
   }
 
-    // --- init adapter (Firebase eller lokal backend)
-    if (!adapter) {
-      console.error("Ingen adapter fundet (hverken Firebase eller lokal backend)");
-      setError("Teknisk fejl: Backend adapter mangler");
-      return;
-    }
-    const app = adapter.init(cfg);
-    if (!app) {
-      console.error("Kunne ikke initialisere backend");
-      setError("Teknisk fejl: Backend ikke initialiseret");
-      return;
-    }
+  if (backendMode === "local") {
+    setHint("Standardlogin (lokal backend): admin@subra.dk / admin");
+  }
 
   setupEventListeners();
 
@@ -167,19 +158,6 @@
         await adapter.signInWithPassword(email, pass);
         setHint("");
       } catch (err) {
-          console.error("Login fejlede", err);
-          const code = err?.code || "";
-          if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
-            setError("Forkert e-mail eller adgangskode.");
-          } else if (code === "invalid_credentials") {
-            setError("Forkert login til lokal backend.");
-          } else if (code === "auth/user-not-found") {
-            setError("Brugeren findes ikke i Auth → Users.");
-          } else if (code === "auth/operation-not-allowed") {
-            setError("Email/Password er ikke aktiveret i Authentication → Sign-in method.");
-          } else {
-            setError("Firebase Auth er ikke tilgængelig eller gav en fejl.");
-          }
         setHint("");
       }
     });
