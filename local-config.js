@@ -7,6 +7,11 @@ window.SUBRA_LOCAL_CONFIG = {
   // Storage: slides/billeder ligger her
   storageFolder: "screensaver/subra-hq", // bør matche stateDocId
 
+  // Backend-tilstand
+  //  - "firebase" (standard): brug Firebase Auth/Firestore/Storage
+  //  - "local": brug den indbyggede Node-backend (/api/state, /api/auth, /api/slides)
+  backendMode: "local",
+
   // Kioskens login
   authMode: "anonymous",
 
