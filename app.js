@@ -1,8 +1,11 @@
 const INACTIVITY_TIMEOUT = 60000; // 60 sekunder før pauseskærm
+const backendMode = (window.SUBRA_LOCAL_CONFIG?.backendMode || 'firebase').toLowerCase();
 const firebaseAdapter = window.SubraFirebase || null;
+const localAdapter = window.SubraLocalBackend || null;
+const dataAdapter = (backendMode === 'local' && localAdapter) || firebaseAdapter;
 let LOCAL_CONFIG = null;
-let firebaseReady = false;
-let firebaseUnsubscribe = null;
+let adapterReady = false;
+let stateUnsubscribe = null;
 let lastSyncedAt = null;
 let syncTimer = null;
 const POLL_INTERVAL = 15000;
@@ -54,9 +57,24 @@ const SUMMARY_EMPTY_MESSAGES = {
 
 function applyLocalConfig(config) {
   LOCAL_CONFIG = config || {};
-  if (firebaseAdapter) {
-    firebaseAdapter.configure(LOCAL_CONFIG.firebase || {});
+  if (dataAdapter && dataAdapter.configure) {
+    dataAdapter.configure(getAdapterOptions());
   }
+}
+
+function getAdapterOptions() {
+  const realtime =
+    LOCAL_CONFIG?.enableRealtime !== undefined
+      ? LOCAL_CONFIG.enableRealtime
+      : LOCAL_CONFIG?.firebase?.enableRealtime;
+  return {
+    ...(LOCAL_CONFIG?.firebase || {}),
+    baseUrl: LOCAL_CONFIG?.baseUrl || '',
+    enableRealtime: realtime,
+    stateCollection: LOCAL_CONFIG?.stateCollection,
+    stateDocId: LOCAL_CONFIG?.stateDocId,
+    storageFolder: LOCAL_CONFIG?.storageFolder,
+  };
 }
 
 let state = ensureStateDefaults();
@@ -209,23 +227,25 @@ function cloneState(source = state) {
 }
 
 async function bootstrapRemoteState() {
-  if (!firebaseAdapter) {
-    appendSyncOutput('Firebase er ikke indlæst. Viser kun lokale data.');
+  if (!dataAdapter) {
+    appendSyncOutput('Backend er ikke indlæst. Viser kun lokale data.');
     return;
   }
 
-  firebaseAdapter.init(LOCAL_CONFIG?.firebase || {});
+  dataAdapter.init(getAdapterOptions());
 
-  if (!firebaseAdapter.isReady()) {
-    appendSyncOutput('Firebase er ikke konfigureret endnu. Opdater firebase-config.js.');
+  if (!dataAdapter.isReady || !dataAdapter.isReady()) {
+    appendSyncOutput('Backend er ikke konfigureret endnu. Opdater konfigurationen.');
     return;
   }
 
   try {
-    await firebaseAdapter.ensureKioskAuth(LOCAL_CONFIG?.kiosk?.authMode || 'anonymous');
-    firebaseReady = firebaseAdapter.isReady();
+    if (dataAdapter.ensureKioskAuth) {
+      await dataAdapter.ensureKioskAuth(LOCAL_CONFIG?.kiosk?.authMode || 'anonymous');
+    }
+    adapterReady = dataAdapter.isReady ? dataAdapter.isReady() : true;
   } catch (error) {
-    appendSyncOutput(`Kunne ikke logge ind i Firebase: ${error.message}`);
+    appendSyncOutput(`Kunne ikke logge ind i backend: ${error.message}`);
     return;
   }
 
@@ -239,23 +259,28 @@ function commitState(nextState) {
   state.settings = state.settings || {};
   state.settings.kiosk = state.settings.kiosk || {};
   state.settings.kiosk.id =
-    state.settings.kiosk.id || LOCAL_CONFIG?.firebase?.stateDocId || 'local';
+    state.settings.kiosk.id || LOCAL_CONFIG?.stateDocId || LOCAL_CONFIG?.firebase?.stateDocId || 'local';
   state.settings.kiosk.lastSynced = state.updatedAt;
-  void pushStateToFirebase();
+  void pushStateToBackend();
 }
 
 function startSyncLoop() {
   if (typeof window === 'undefined') return;
-  if (!firebaseReady) {
+  if (!adapterReady) {
     return;
   }
 
-  if (LOCAL_CONFIG?.firebase?.enableRealtime) {
-    if (firebaseUnsubscribe) {
-      firebaseUnsubscribe();
+  const realtimeEnabled =
+    LOCAL_CONFIG?.enableRealtime !== undefined
+      ? LOCAL_CONFIG.enableRealtime
+      : LOCAL_CONFIG?.firebase?.enableRealtime;
+
+  if (realtimeEnabled) {
+    if (stateUnsubscribe) {
+      stateUnsubscribe();
     }
     try {
-      firebaseUnsubscribe = firebaseAdapter.subscribeToState((remoteState) => {
+      stateUnsubscribe = dataAdapter.subscribeToState((remoteState) => {
         if (!remoteState) {
           return;
         }
@@ -276,9 +301,9 @@ function startSyncLoop() {
     return;
   }
 
-  if (firebaseUnsubscribe) {
-    firebaseUnsubscribe();
-    firebaseUnsubscribe = null;
+  if (stateUnsubscribe) {
+    stateUnsubscribe();
+    stateUnsubscribe = null;
   }
   if (syncTimer) {
     window.clearInterval(syncTimer);
@@ -293,21 +318,21 @@ function stopSyncLoop() {
     window.clearInterval(syncTimer);
     syncTimer = null;
   }
-  if (firebaseUnsubscribe) {
-    firebaseUnsubscribe();
-    firebaseUnsubscribe = null;
+  if (stateUnsubscribe) {
+    stateUnsubscribe();
+    stateUnsubscribe = null;
   }
 }
 
 async function fetchRemoteState(force = false) {
-  if (!firebaseReady || !firebaseAdapter?.isReady()) {
+  if (!adapterReady || !dataAdapter?.isReady()) {
     return;
   }
 
   try {
-    const remoteState = await firebaseAdapter.fetchState();
+    const remoteState = await dataAdapter.fetchState();
     if (!remoteState) {
-      appendSyncOutput('Ingen data fundet i Firestore endnu – bruger lokale defaults.');
+      appendSyncOutput('Ingen data fundet i backend endnu – bruger lokale defaults.');
       return;
     }
 
@@ -322,28 +347,28 @@ async function fetchRemoteState(force = false) {
     updateQrCodes();
     updateGuestPolicyLink();
   } catch (error) {
-    appendSyncOutput(`Kunne ikke hente data fra Firebase: ${error.message}`);
+    appendSyncOutput(`Kunne ikke hente data fra backend: ${error.message}`);
   }
 }
 
-async function pushStateToFirebase() {
+async function pushStateToBackend() {
   if (isSyncing) return;
-  if (!firebaseReady || !firebaseAdapter?.isReady()) {
-    appendSyncOutput('Firebase er ikke klar – ændringer gemmes lokalt.');
+  if (!adapterReady || !dataAdapter?.isReady()) {
+    appendSyncOutput('Backend er ikke klar – ændringer gemmes lokalt.');
     return;
   }
   isSyncing = true;
 
   try {
-    const saved = await firebaseAdapter.saveState(serializeForStorage(state));
+    const saved = await dataAdapter.saveState(serializeForStorage(state));
     state = ensureStateDefaults(saved);
     lastSyncedAt = state.updatedAt;
     renderSlides();
     renderAll();
-    appendSyncOutput('Ændringer gemt i Firebase.');
+    appendSyncOutput('Ændringer gemt i backend.');
   } catch (error) {
-    console.error('Kunne ikke gemme state til Firebase', error);
-    appendSyncOutput(`Kunne ikke gemme til Firebase: ${error.message}`);
+    console.error('Kunne ikke gemme state til backend', error);
+    appendSyncOutput(`Kunne ikke gemme til backend: ${error.message}`);
   } finally {
     isSyncing = false;
   }
@@ -1194,11 +1219,11 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    if (!firebaseReady || !firebaseAdapter?.isReady()) {
-      throw new Error('Firebase er ikke konfigureret til uploads');
+    if (!adapterReady || !dataAdapter?.isReady()) {
+      throw new Error('Backend er ikke konfigureret til uploads');
     }
 
-    const upload = await firebaseAdapter.uploadSlide(file);
+    const upload = await dataAdapter.uploadSlide(file);
     slide.image = upload.downloadURL;
     slide.storagePath = upload.storagePath || null;
     slide.updatedAt = new Date().toISOString();
@@ -1206,7 +1231,7 @@ async function handleSlideUploadChange(event) {
     renderSlides();
     renderScreensaverAdmin();
     commitState();
-    appendSyncOutput('Opdaterede pauseskærmsbilledet i Firebase Storage.');
+    appendSyncOutput('Opdaterede pauseskærmsbilledet i backend.');
   } catch (error) {
     console.error('Fejl ved upload af slide', error);
     appendSyncOutput(`Kunne ikke uploade billede: ${error.message}`);
@@ -1329,16 +1354,16 @@ function handleImport(event) {
   elements.importFile.value = '';
 }
 
-function removeSlideAsset(storagePath) {
-  if (!storagePath) return;
-  if (!firebaseReady || !firebaseAdapter?.isReady()) {
-    return;
-  }
+  function removeSlideAsset(storagePath) {
+    if (!storagePath) return;
+    if (!adapterReady || !dataAdapter?.isReady()) {
+      return;
+    }
 
-  void firebaseAdapter.deleteSlide(storagePath).catch((error) => {
-    console.warn('Kunne ikke slette slide-asset', error);
-  });
-}
+    void dataAdapter.deleteSlide(storagePath).catch((error) => {
+      console.warn('Kunne ikke slette slide-asset', error);
+    });
+  }
 
 function isToday(timestamp) {
   const today = new Date();

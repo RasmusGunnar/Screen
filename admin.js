@@ -2,14 +2,18 @@
 // Admin-portal med autentificering, datavisning og redigeringsmuligheder
 
 (function () {
-  const adapter = window.SubraFirebase;
   const LOCAL = window.SUBRA_LOCAL_CONFIG || {};
+  const backendMode = (LOCAL.backendMode || 'firebase').toLowerCase();
+  const adapter =
+    (backendMode === 'local' && window.SubraLocalBackend) || window.SubraFirebase || null;
   const DEFAULTS = window.SUBRA_DEFAULTS || {};
   const cfg = {
     stateCollection: LOCAL.stateCollection || "kiosks",
     stateDocId: LOCAL.stateDocId || "subra-hq",
     storageFolder: LOCAL.storageFolder || `screensaver/${LOCAL.stateDocId || "subra-hq"}`,
     enableRealtime: true,
+    baseUrl: LOCAL.baseUrl || "",
+    backendMode,
   };
 
   const STATUS_LABELS = {
@@ -116,18 +120,18 @@
     el.classList.remove("error");
   }
 
-  // --- init Firebase adapter
-  if (!adapter) {
-    console.error("firebase-adapter ikke fundet");
-    setError("Teknisk fejl: Firebase adapter mangler");
-    return;
-  }
-  const app = adapter.init(cfg);
-  if (!app) {
-    console.error("Kunne ikke initialisere Firebase");
-    setError("Teknisk fejl: Firebase ikke initialiseret");
-    return;
-  }
+    // --- init adapter (Firebase eller lokal backend)
+    if (!adapter) {
+      console.error("Ingen adapter fundet (hverken Firebase eller lokal backend)");
+      setError("Teknisk fejl: Backend adapter mangler");
+      return;
+    }
+    const app = adapter.init(cfg);
+    if (!app) {
+      console.error("Kunne ikke initialisere backend");
+      setError("Teknisk fejl: Backend ikke initialiseret");
+      return;
+    }
 
   setupEventListeners();
 
@@ -136,9 +140,9 @@
     if (user) {
       setError("");
       setHint("");
-      if (activeAdmin) {
-        activeAdmin.textContent = user.email || `(anon) ${user.uid}`;
-      }
+        if (activeAdmin) {
+          activeAdmin.textContent = user.name || user.email || `(anon) ${user.uid}`;
+        }
       hide(loginView);
       show(adminMain);
       await reloadState();
@@ -163,17 +167,19 @@
         await adapter.signInWithPassword(email, pass);
         setHint("");
       } catch (err) {
-        console.error("Login fejlede", err);
-        const code = err?.code || "";
-        if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
-          setError("Forkert e-mail eller adgangskode.");
-        } else if (code === "auth/user-not-found") {
-          setError("Brugeren findes ikke i Auth → Users.");
-        } else if (code === "auth/operation-not-allowed") {
-          setError("Email/Password er ikke aktiveret i Authentication → Sign-in method.");
-        } else {
-          setError("Firebase Auth er ikke tilgængelig eller gav en fejl.");
-        }
+          console.error("Login fejlede", err);
+          const code = err?.code || "";
+          if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
+            setError("Forkert e-mail eller adgangskode.");
+          } else if (code === "invalid_credentials") {
+            setError("Forkert login til lokal backend.");
+          } else if (code === "auth/user-not-found") {
+            setError("Brugeren findes ikke i Auth → Users.");
+          } else if (code === "auth/operation-not-allowed") {
+            setError("Email/Password er ikke aktiveret i Authentication → Sign-in method.");
+          } else {
+            setError("Firebase Auth er ikke tilgængelig eller gav en fejl.");
+          }
         setHint("");
       }
     });
