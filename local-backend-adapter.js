@@ -69,20 +69,6 @@
       return unsubscribe;
     },
     async signInWithPassword(email, password) {
-      let res;
-      try {
-        res = await fetch(`${this.baseUrl}/api/auth/login`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-        });
-      } catch (error) {
-        const err = new Error('network_error');
-        err.code = 'network_error';
-        throw err;
-      }
-
       if (!res.ok) {
         const payload = await res.json().catch(() => ({ error: 'unknown_error' }));
         const error = new Error(payload.error || 'login_failed');
