@@ -58,6 +58,7 @@
   const employeeLast = $("employee-last");
   const employeeRole = $("employee-role");
   const employeeDepartment = $("employee-department");
+  const departmentOptionsList = $("department-options");
   const employeeContact = $("employee-contact");
   const employeePhoto = $("employee-photo");
   const resetFormBtn = $("reset-form");
@@ -220,7 +221,7 @@
 
   function renderAll() {
     renderStateSummary(currentState);
-    updateDepartmentOptions();
+    updateDepartmentOptions(true);
     updateExportEmployeeOptions();
     renderActivity();
     renderEmployeeList();
@@ -421,26 +422,40 @@
     clearFeedback(policyFeedback);
   }
 
-  function updateDepartmentOptions() {
-    if (!activityDepartmentFilter) return;
-    const previous = activityDepartmentFilter.value;
+  function updateDepartmentOptions(includeInputValue = false) {
+    const inputDepartment = employeeDepartment?.value.trim();
     const departments = Array.from(
       new Set(
         (currentState.employees || [])
           .map((emp) => emp.department)
           .filter(Boolean)
       )
-    ).sort((a, b) => a.localeCompare(b, "da", { sensitivity: "base" }));
+    );
 
-    activityDepartmentFilter.innerHTML = `
-      <option value="all">Alle afdelinger</option>
-      ${departments.map((dept) => `<option value="${escapeHtml(dept)}">${escapeHtml(dept)}</option>`).join("")}
-    `;
+    if (includeInputValue && inputDepartment) {
+      departments.push(inputDepartment);
+    }
 
-    if (departments.includes(previous)) {
-      activityDepartmentFilter.value = previous;
-    } else {
-      activityDepartmentFilter.value = "all";
+    departments.sort((a, b) => a.localeCompare(b, "da", { sensitivity: "base" }));
+
+    if (activityDepartmentFilter) {
+      const previous = activityDepartmentFilter.value;
+      activityDepartmentFilter.innerHTML = `
+        <option value="all">Alle afdelinger</option>
+        ${departments.map((dept) => `<option value="${escapeHtml(dept)}">${escapeHtml(dept)}</option>`).join("")}
+      `;
+
+      if (departments.includes(previous)) {
+        activityDepartmentFilter.value = previous;
+      } else {
+        activityDepartmentFilter.value = "all";
+      }
+    }
+
+    if (departmentOptionsList) {
+      departmentOptionsList.innerHTML = departments
+        .map((dept) => `<option value="${escapeAttribute(dept)}"></option>`)
+        .join("");
     }
   }
 
@@ -615,6 +630,10 @@
         setFeedback(employeeFeedback, "Klar til at oprette ny medarbejder.");
         employeeFirst?.focus();
       });
+    }
+
+    if (employeeDepartment) {
+      employeeDepartment.addEventListener("input", () => updateDepartmentOptions(true));
     }
 
     if (employeeForm) {

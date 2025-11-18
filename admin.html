@@ -134,7 +134,8 @@
               <div class="form-row">
                 <label><span>Fornavn</span><input id="employee-first" required /></label>
                 <label><span>Efternavn</span><input id="employee-last" required /></label>
-                <label><span>Afdeling</span><input id="employee-department" required /></label>
+                <label><span>Afdeling</span><input id="employee-department" list="department-options" autocomplete="off" required /></label>
+                <datalist id="department-options"></datalist>
               </div>
               <div class="form-row">
                 <label><span>Rolle</span><input id="employee-role" /></label>
