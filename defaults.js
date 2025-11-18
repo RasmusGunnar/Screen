@@ -159,4 +159,74 @@ window.SUBRA_DEFAULTS = {
   policyLinks: {
     nda: 'https://subra-kiosk.example.com/assets/subra-nda.pdf',
   },
+  visitors: {
+    timeline: [
+      {
+        id: 'visit-1',
+        name: 'Lars H. Jensen',
+        company: 'Nordic Labs',
+        hostName: 'Anna Andersen',
+        category: 'Visitor',
+        status: 'signed-in',
+        signedInAt: new Date().toISOString(),
+        signedOutAt: null,
+      },
+    ],
+    remembered: [
+      {
+        id: 'remembered-1',
+        name: 'Rebecca Pine',
+        company: 'Pine Labs',
+        hostName: 'Jens Iversen',
+        email: 'rp@pinelabs.com',
+      },
+    ],
+    preregistrations: [
+      {
+        id: 'pre-1',
+        name: 'Edna Lawton',
+        company: 'Lawton & Co.',
+        hostName: 'Signe Nygaard',
+        arrivalDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        status: 'invited',
+      },
+    ],
+  },
+  deliveries: [
+    {
+      id: 'delivery-1',
+      courier: 'DHL',
+      contact: 'Sofie Madsen',
+      recipient: 'Reception',
+      status: 'awaiting-pickup',
+      receivedAt: new Date().toISOString(),
+      type: 'Package',
+    },
+  ],
+  spaces: {
+    bookings: [
+      {
+        id: 'booking-1',
+        resourceId: 'meeting-room-1',
+        title: 'Projektmøde',
+        start: new Date().toISOString(),
+        end: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        organizer: 'Jens Iversen',
+        status: 'tentative',
+      },
+    ],
+    resources: [
+      {
+        id: 'meeting-room-1',
+        name: 'Mødelokale 1',
+        location: 'Head Office',
+        capacity: 8,
+        type: 'meeting-room',
+      },
+    ],
+  },
+  evacuation: {
+    lastRefreshed: null,
+    roster: [],
+  },
 };

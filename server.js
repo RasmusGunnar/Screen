@@ -46,6 +46,10 @@ function ensureStateDefaults(input = {}) {
     employees: [],
     guests: [],
     logs: [],
+    visitors: { timeline: [], remembered: [], preregistrations: [] },
+    deliveries: [],
+    spaces: { bookings: [], resources: [] },
+    evacuation: { lastRefreshed: now, roster: [] },
     screensaver: { slides: [] },
     qrLinks: { employee: '', guest: '' },
     policyLinks: { nda: '' },
@@ -104,6 +108,92 @@ function ensureStateDefaults(input = {}) {
         timestamp: entry.timestamp || now,
       }))
       .slice(0, 500);
+  }
+
+  if (raw.visitors) {
+    const timeline = Array.isArray(raw.visitors.timeline) ? raw.visitors.timeline : [];
+    const remembered = Array.isArray(raw.visitors.remembered) ? raw.visitors.remembered : [];
+    const preregistrations = Array.isArray(raw.visitors.preregistrations)
+      ? raw.visitors.preregistrations
+      : [];
+
+    state.visitors = {
+      timeline: timeline.map((entry, index) => ({
+        id: entry.id || `visit-${index}-${randomUUID()}`,
+        name: (entry.name || '').toString().trim(),
+        company: (entry.company || '').toString().trim(),
+        hostName: (entry.hostName || '').toString().trim(),
+        category: (entry.category || '').toString().trim(),
+        signedInAt: entry.signedInAt || entry.timestamp || null,
+        signedOutAt: entry.signedOutAt || null,
+        status: entry.status || 'pending',
+      })),
+      remembered: remembered.map((person, index) => ({
+        id: person.id || `remembered-${index}-${randomUUID()}`,
+        name: (person.name || '').toString().trim(),
+        company: (person.company || '').toString().trim(),
+        hostName: (person.hostName || '').toString().trim(),
+        email: (person.email || '').toString().trim(),
+      })),
+      preregistrations: preregistrations.map((entry, index) => ({
+        id: entry.id || `pre-${index}-${randomUUID()}`,
+        name: (entry.name || '').toString().trim(),
+        company: (entry.company || '').toString().trim(),
+        hostName: (entry.hostName || '').toString().trim(),
+        arrivalDate: entry.arrivalDate || null,
+        status: entry.status || 'invited',
+      })),
+    };
+  }
+
+  if (Array.isArray(raw.deliveries)) {
+    state.deliveries = raw.deliveries.map((delivery, index) => ({
+      id: delivery.id || `delivery-${index}-${randomUUID()}`,
+      courier: (delivery.courier || '').toString().trim(),
+      contact: (delivery.contact || '').toString().trim(),
+      recipient: (delivery.recipient || '').toString().trim(),
+      status: delivery.status || 'awaiting-pickup',
+      receivedAt: delivery.receivedAt || now,
+      type: (delivery.type || '').toString().trim(),
+    }));
+  }
+
+  if (raw.spaces) {
+    const bookings = Array.isArray(raw.spaces.bookings) ? raw.spaces.bookings : [];
+    const resources = Array.isArray(raw.spaces.resources) ? raw.spaces.resources : [];
+
+    state.spaces = {
+      bookings: bookings.map((booking, index) => ({
+        id: booking.id || `booking-${index}-${randomUUID()}`,
+        resourceId: booking.resourceId || null,
+        title: (booking.title || '').toString().trim(),
+        start: booking.start || null,
+        end: booking.end || null,
+        organizer: (booking.organizer || '').toString().trim(),
+        status: booking.status || 'tentative',
+      })),
+      resources: resources.map((resource, index) => ({
+        id: resource.id || `resource-${index}-${randomUUID()}`,
+        name: (resource.name || '').toString().trim(),
+        location: (resource.location || '').toString().trim(),
+        capacity: Number.isFinite(resource.capacity) ? resource.capacity : null,
+        type: (resource.type || '').toString().trim(),
+      })),
+    };
+  }
+
+  if (raw.evacuation) {
+    state.evacuation = {
+      lastRefreshed: raw.evacuation.lastRefreshed || now,
+      roster: Array.isArray(raw.evacuation.roster)
+        ? raw.evacuation.roster.map((entry, index) => ({
+            id: entry.id || `evac-${index}-${randomUUID()}`,
+            name: (entry.name || '').toString().trim(),
+            status: entry.status || 'unknown',
+            contact: (entry.contact || '').toString().trim(),
+          }))
+        : [],
+    };
   }
 
   if (raw.screensaver && Array.isArray(raw.screensaver.slides)) {

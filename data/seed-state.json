@@ -119,6 +119,76 @@
   ],
   "guests": [],
   "logs": [],
+  "visitors": {
+    "timeline": [
+      {
+        "id": "visit-1",
+        "name": "Lars H. Jensen",
+        "company": "Nordic Labs",
+        "hostName": "Anna Andersen",
+        "category": "Visitor",
+        "status": "signed-in",
+        "signedInAt": "2025-01-15T08:45:00.000Z",
+        "signedOutAt": null
+      }
+    ],
+    "remembered": [
+      {
+        "id": "remembered-1",
+        "name": "Rebecca Pine",
+        "company": "Pine Labs",
+        "hostName": "Jens Iversen",
+        "email": "rp@pinelabs.com"
+      }
+    ],
+    "preregistrations": [
+      {
+        "id": "pre-1",
+        "name": "Edna Lawton",
+        "company": "Lawton & Co.",
+        "hostName": "Signe Nygaard",
+        "arrivalDate": "2025-01-22T00:00:00.000Z",
+        "status": "invited"
+      }
+    ]
+  },
+  "deliveries": [
+    {
+      "id": "delivery-1",
+      "courier": "DHL",
+      "contact": "Sofie Madsen",
+      "recipient": "Reception",
+      "status": "awaiting-pickup",
+      "receivedAt": "2025-01-15T09:15:00.000Z",
+      "type": "Package"
+    }
+  ],
+  "spaces": {
+    "bookings": [
+      {
+        "id": "booking-1",
+        "resourceId": "meeting-room-1",
+        "title": "Projektmøde",
+        "start": "2025-01-15T10:00:00.000Z",
+        "end": "2025-01-15T11:00:00.000Z",
+        "organizer": "Jens Iversen",
+        "status": "tentative"
+      }
+    ],
+    "resources": [
+      {
+        "id": "meeting-room-1",
+        "name": "Mødelokale 1",
+        "location": "Head Office",
+        "capacity": 8,
+        "type": "meeting-room"
+      }
+    ]
+  },
+  "evacuation": {
+    "lastRefreshed": "2025-01-15T08:00:00.000Z",
+    "roster": []
+  },
   "screensaver": {
     "slides": [
       {
