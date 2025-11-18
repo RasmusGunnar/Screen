@@ -11,6 +11,19 @@
       this.config = { ...this.config, ...options };
       return this.config;
     },
+    get baseOrigin() {
+      if (this.config.baseUrl) return this.config.baseUrl;
+      if (typeof window !== 'undefined' && window.location?.origin) {
+        return window.location.origin;
+      }
+      return '';
+    },
+    buildUrl(path = '/') {
+      const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+      const base = this.baseOrigin;
+      if (!base) return normalizedPath;
+      return new URL(normalizedPath, base).toString();
+    },
     init(options = {}) {
       this.configure(options);
       this.initialized = true;
@@ -41,7 +54,7 @@
     },
     async refreshSession() {
       try {
-        const res = await fetch(`${this.baseUrl}/api/auth/session`, {
+        const res = await fetch(this.buildUrl('/api/auth/session'), {
           method: 'GET',
           credentials: 'include',
         });
@@ -69,6 +82,12 @@
       return unsubscribe;
     },
     async signInWithPassword(email, password) {
+      const res = await fetch(this.buildUrl('/api/auth/login'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
       if (!res.ok) {
         const payload = await res.json().catch(() => ({ error: 'unknown_error' }));
         const error = new Error(payload.error || 'login_failed');
@@ -81,7 +100,7 @@
       return this.currentUser;
     },
     async signOut() {
-      await fetch(`${this.baseUrl}/api/auth/logout`, {
+      await fetch(this.buildUrl('/api/auth/logout'), {
         method: 'POST',
         credentials: 'include',
       }).catch(() => {});
@@ -89,7 +108,7 @@
       this.emitAuthState(null);
     },
     async fetchState() {
-      const res = await fetch(`${this.baseUrl}/api/state`, {
+      const res = await fetch(this.buildUrl('/api/state'), {
         method: 'GET',
         credentials: 'include',
       });
@@ -100,7 +119,7 @@
       return payload.state;
     },
     async saveState(state) {
-      const res = await fetch(`${this.baseUrl}/api/state`, {
+      const res = await fetch(this.buildUrl('/api/state'), {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -120,7 +139,7 @@
       if (typeof onProgress === 'function') {
         onProgress({ bytesTransferred: file.size, totalBytes: file.size });
       }
-      const res = await fetch(`${this.baseUrl}/api/slides/upload`, {
+      const res = await fetch(this.buildUrl('/api/slides/upload'), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -134,7 +153,7 @@
     },
     async deleteSlide(storagePath) {
       if (!storagePath) return;
-      await fetch(`${this.baseUrl}/api/slides/remove`, {
+      await fetch(this.buildUrl('/api/slides/remove'), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
