@@ -53,6 +53,22 @@ a {
   background: transparent;
 }
 
+.view-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.view-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+[data-view-panel] > section {
+  scroll-margin-top: 120px;
+}
+
 .auth-panel {
   width: min(420px, 100%);
   background: var(--surface);
@@ -470,6 +486,63 @@ button.ghost:hover,
 .list {
   display: grid;
   gap: 12px;
+}
+
+.slide-admin {
+  flex-direction: column;
+}
+
+@media (min-width: 768px) {
+  .slide-admin {
+    flex-direction: row;
+    align-items: stretch;
+  }
+}
+
+.slide-admin-main {
+  display: flex;
+  flex-direction: row;
+  gap: 18px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.slide-preview {
+  width: 150px;
+  height: 110px;
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  border: 1px dashed var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 6px;
+}
+
+.slide-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.slide-admin-fields {
+  display: grid;
+  gap: 12px;
+  flex: 1;
+  min-width: 240px;
+}
+
+.slide-admin-fields label {
+  display: block;
+}
+
+.slide-meta {
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .list-item {
