@@ -2,238 +2,99 @@
 <html lang="da">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SUBRA · Adminportal</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="admin.css" />
   </head>
   <body>
-    <div id="admin-app" class="admin-app">
+    <div id="admin-app">
+      <!-- LOGIN VIEW -->
       <section id="login-view" class="auth-panel">
-        <img src="assets/LOGO_SUBRA_sort_transp-web.png" alt="SUBRA" class="auth-logo" />
-        <div class="auth-copy">
-          <h1>Velkommen tilbage</h1>
-          <p>Log ind for at administrere medarbejdere, slides, QR-koder og rapporter.</p>
+        <div class="auth-inner">
+          <h1>SUBRA Admin</h1>
+          <p>Log ind for at administrere medarbejdere, slides og indstillinger.</p>
+
+          <form id="login-form" class="auth-form">
+            <label>
+              <span>E-mail</span>
+              <input type="email" id="login-email" autocomplete="username" required />
+            </label>
+            <label>
+              <span>Adgangskode</span>
+              <input
+                type="password"
+                id="login-passcode"
+                autocomplete="current-password"
+                required
+              />
+            </label>
+            <button type="submit">Log ind</button>
+            <p id="login-error" class="auth-error"></p>
+            <p id="login-hint" class="auth-hint"></p>
+          </form>
         </div>
-        <form id="login-form" class="auth-form">
-          <label>
-            <span>E-mail</span>
-            <input type="email" id="login-email" autocomplete="username" required />
-          </label>
-          <label>
-            <span>Adgangskode</span>
-            <input type="password" id="login-passcode" autocomplete="current-password" required />
-          </label>
-          <button type="submit" class="primary">Log ind</button>
-          <p id="login-error" class="auth-error" role="alert" aria-live="assertive"></p>
-          <p id="login-hint" class="auth-hint"></p>
-        </form>
       </section>
 
-      <main id="admin-main" class="hidden" aria-live="polite">
+      <!-- MAIN ADMIN -->
+      <main id="admin-main" class="hidden">
         <header class="admin-header">
-          <div class="header-brand">
-            <img src="assets/LOGO_SUBRA_sort_transp-web.png" alt="SUBRA" class="header-logo" />
-            <div>
-              <h1>SUBRA Workplace Admin</h1>
-              <p id="active-admin"></p>
-            </div>
+          <div class="header-left">
+            <h1>SUBRA Workplace Admin</h1>
+            <p id="active-admin"></p>
           </div>
-          <div class="header-actions">
-            <button id="sync-now" class="ghost">Synkroniser nu</button>
-            <button id="logout" class="ghost">Log ud</button>
+          <div class="header-right">
+            <button id="sync-now">Synkroniser nu</button>
+            <button id="logout">Log ud</button>
           </div>
         </header>
 
+        <section class="sync-log-panel">
+          <h2>Synk-log</h2>
+          <div id="sync-log" class="sync-log"></div>
+        </section>
+
         <section class="stat-grid" id="stat-grid" aria-label="Nøgletal"></section>
 
-        <section class="panel-grid">
-          <article class="panel" aria-labelledby="activity-title">
-            <header>
-              <h2 id="activity-title">Aktivitetslog</h2>
-              <div class="panel-actions">
-                <label>
-                  <span>Filtrér afdeling</span>
-                  <select id="activity-department-filter"></select>
-                </label>
-                <label>
-                  <span>Vis</span>
-                  <select id="activity-type-filter">
-                    <option value="all">Alle events</option>
-                    <option value="status-change">Statusændringer</option>
-                    <option value="guest-checkin">Gæster</option>
-                    <option value="employee-update">Medarbejderændringer</option>
-                    <option value="settings-change">Indstillinger</option>
-                  </select>
-                </label>
-              </div>
-            </header>
-            <div class="table-scroll">
-              <table class="activity-table">
-                <thead>
-                  <tr>
-                    <th>Tidspunkt</th>
-                    <th>Medarbejder/gæst</th>
-                    <th>Type</th>
-                    <th>Detaljer</th>
-                  </tr>
-                </thead>
-                <tbody id="activity-body"></tbody>
-              </table>
+        <section class="panel">
+          <header>
+            <h2>Aktivitetslog</h2>
+            <div class="filters">
+              <label>
+                <span>Type</span>
+                <select id="activity-type-filter">
+                  <option value="all">Alle typer</option>
+                  <option value="status-change">Statusændringer</option>
+                  <option value="guest-checkin">Gæster</option>
+                </select>
+              </label>
+              <label>
+                <span>Afdeling</span>
+                <select id="activity-department-filter">
+                  <option value="all">Alle afdelinger</option>
+                </select>
+              </label>
             </div>
-          </article>
-
-          <article class="panel" aria-labelledby="export-title">
-            <header>
-              <h2 id="export-title">Dataudtræk</h2>
-            </header>
-            <form id="export-form" class="panel-form">
-              <div class="form-row">
-                <label>
-                  <span>Medarbejder</span>
-                  <select id="export-employee"></select>
-                </label>
-                <label>
-                  <span>Fra dato</span>
-                  <input type="date" id="export-from" />
-                </label>
-                <label>
-                  <span>Til dato</span>
-                  <input type="date" id="export-to" />
-                </label>
-              </div>
-              <div class="form-row">
-                <label class="checkbox">
-                  <input type="checkbox" id="export-include-guests" checked />
-                  <span>Medtag gæsteregistreringer</span>
-                </label>
-                <label class="checkbox">
-                  <input type="checkbox" id="export-include-status" checked />
-                  <span>Medtag statusændringer</span>
-                </label>
-              </div>
-              <button type="submit" class="primary">Download CSV</button>
-              <p id="export-feedback" class="panel-feedback" aria-live="polite"></p>
-            </form>
-          </article>
-        </section>
-
-        <section class="panel-grid">
-          <article class="panel" aria-labelledby="employee-title">
-            <header>
-              <h2 id="employee-title">Medarbejdere</h2>
-              <button id="new-employee" class="ghost">Ny medarbejder</button>
-            </header>
-            <form id="employee-form" class="panel-form">
-              <input type="hidden" id="employee-id" />
-              <div class="form-row">
-                <label><span>Fornavn</span><input id="employee-first" required /></label>
-                <label><span>Efternavn</span><input id="employee-last" required /></label>
-                <label><span>Afdeling</span><input id="employee-department" list="department-options" autocomplete="off" required /></label>
-                <datalist id="department-options"></datalist>
-              </div>
-              <div class="form-row">
-                <label><span>Rolle</span><input id="employee-role" /></label>
-                <label><span>Kontakt</span><input id="employee-contact" /></label>
-                <label><span>Billede-URL</span><input id="employee-photo" placeholder="https://" /></label>
-              </div>
-              <div class="form-actions">
-                <button type="submit" class="primary">Gem medarbejder</button>
-                <button type="button" id="reset-form" class="ghost">Nulstil</button>
-              </div>
-              <p id="employee-feedback" class="panel-feedback" aria-live="polite"></p>
-            </form>
-            <div id="employee-list" class="list"></div>
-          </article>
-
-          <article class="panel" aria-labelledby="absence-title">
-            <header>
-              <h2 id="absence-title">Fraværsoversigt</h2>
-            </header>
-            <div id="absence-list" class="list"></div>
-          </article>
-        </section>
-
-        <section class="panel-grid">
-          <article class="panel" aria-labelledby="slides-title">
-            <header>
-              <h2 id="slides-title">Pauseskærm &amp; billedbank</h2>
-              <button id="add-slide" class="ghost">Tilføj slide</button>
-            </header>
-            <div id="screensaver-admin" class="list"></div>
-            <p id="slide-feedback" class="panel-feedback" aria-live="polite"></p>
-            <input type="file" id="slide-upload" accept="image/*" hidden />
-          </article>
-
-          <article class="panel" aria-labelledby="qr-title">
-            <header>
-              <h2 id="qr-title">QR-selvbetjening</h2>
-            </header>
-            <form id="qr-form" class="panel-form">
-              <div class="form-row">
-                <label><span>Medarbejder-URL</span><input id="qr-employee" placeholder="https://" /></label>
-              </div>
-              <button type="submit" class="primary">Opdater QR-kode</button>
-              <p id="qr-feedback" class="panel-feedback" aria-live="polite"></p>
-            </form>
-            <div class="qr-preview">
-              <p>Aktuelt link:</p>
-              <dl>
-                <dt>Medarbejdere</dt>
-                <dd id="qr-employee-link"></dd>
-              </dl>
-            </div>
-          </article>
-
-          <article class="panel" aria-labelledby="policy-title">
-            <header>
-              <h2 id="policy-title">Politikker</h2>
-            </header>
-            <form id="policy-form" class="panel-form">
-              <div class="form-row">
-                <label><span>NDA-link (PDF)</span><input id="policy-nda-link" type="url" placeholder="https://" /></label>
-              </div>
-              <button type="submit" class="primary">Gem link</button>
-              <p id="policy-feedback" class="panel-feedback" aria-live="polite"></p>
-            </form>
-          </article>
+          </header>
+          <div class="panel-body">
+            <table>
+              <thead>
+                <tr>
+                  <th>Dato</th>
+                  <th>Person</th>
+                  <th>Type</th>
+                  <th>Detaljer</th>
+                </tr>
+              </thead>
+              <tbody id="activity-body"></tbody>
+            </table>
+          </div>
         </section>
 
         <section class="panel">
           <header>
-            <h2>Synkronisering</h2>
+            <h2>Eksport af log</h2>
           </header>
-          <div class="sync-log" id="sync-log" aria-live="polite"></div>
-        </section>
-      </main>
-    </div>
-
-    <!-- ======================= -->
-    <!-- SCRIPTS (rigtig rækkefølge) -->
-    <!-- 1) Firebase SDK (compat)   -->
-    <!-- 2) Konfig-filer             -->
-    <!-- 3) Adapter + admin app      -->
-    <!-- ======================= -->
-
-    <!-- 1) Firebase SDK – UDEN integrity/crossorigin -->
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js?v=2"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js?v=2"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js?v=2"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js?v=2"></script>
-
-    <!-- 2) Vores konfiguration (skal komme før adapter/app) -->
-    <script src="firebase-config.js?v=2"></script>
-    <script src="local-config.js?v=2"></script>
-    <script src="defaults.js?v=2"></script>
-
-    <!-- 3) Adapter + admin-app -->
-    <script src="local-backend-adapter.js?v=1"></script>
-    <script src="firebase-adapter.js?v=2"></script>
-    <script src="admin.js?v=3"></script>
-  </body>
-</html>
+          <form id="export-form" class="panel-form">
+            <div class="form-row">
+              <label>
+                <span>Medarbejder<
