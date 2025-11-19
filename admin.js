@@ -3,16 +3,33 @@
 const DEFAULTS = window.SUBRA_DEFAULTS || {};
 const LOCAL_CONFIG = window.SUBRA_LOCAL_CONFIG || {};
 const firebaseConfig = window.SUBRA_FIREBASE_CONFIG || {};
+const backendMode = (LOCAL_CONFIG.backendMode || "firebase").toLowerCase();
+const localBackend = window.SubraLocalBackend || null;
+const useLocalBackend = backendMode === "local" && !!localBackend;
 
-if (!firebaseConfig || !firebaseConfig.apiKey) {
-  console.error("Mangler Firebase-konfiguration (window.SUBRA_FIREBASE_CONFIG).");
+let app = null;
+let auth = null;
+let db = null;
+let storage = null;
+
+if (useLocalBackend) {
+  localBackend.init({ baseUrl: LOCAL_CONFIG?.baseUrl || "" });
+} else {
+  if (!firebaseConfig || !firebaseConfig.apiKey) {
+    console.error("Mangler Firebase-konfiguration (window.SUBRA_FIREBASE_CONFIG).");
+  }
+  if (typeof firebase === "undefined") {
+    console.error("Firebase SDK er ikke indlæst.");
+  } else {
+    app = firebase.initializeApp(firebaseConfig);
+    auth = firebase.auth();
+    db = firebase.firestore();
+    if (db?.settings) {
+      db.settings({ ignoreUndefinedProperties: true });
+    }
+    storage = firebase.storage();
+  }
 }
-
-// Init Firebase (compat)
-const app = firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
-const storage = firebase.storage();
 
 // Hvor i Firestore state ligger
 const STATE_COLLECTION = LOCAL_CONFIG.stateCollection || "kiosks";
@@ -134,20 +151,35 @@ async function handleLoginSubmit(event) {
   }
 
   try {
-    const cred = await auth.signInWithEmailAndPassword(email, password);
-    const user = cred.user;
-    activeAdmin = {
-      email: user.email,
-      name: user.displayName || user.email,
-      role: "editor",
-    };
+    if (useLocalBackend) {
+      const adminUser = await localBackend.signInWithPassword(email, password);
+      activeAdmin = {
+        email: adminUser?.email || email,
+        name: adminUser?.name || adminUser?.email || email,
+        role: adminUser?.role || "editor",
+      };
+    } else {
+      const cred = await auth.signInWithEmailAndPassword(email, password);
+      const user = cred.user;
+      activeAdmin = {
+        email: user.email,
+        name: user.displayName || user.email,
+        role: "editor",
+      };
+    }
     permissionErrorNotified = false;
     elements.loginForm?.reset();
     showAdmin();
     await bootstrapRemoteState();
   } catch (error) {
     console.error("Login fejlede", error);
-    if (error.code === "auth/wrong-password" || error.code === "auth/user-not-found") {
+    if (useLocalBackend) {
+      if (error.code === "invalid_credentials" || error.code === "missing_credentials") {
+        elements.loginError.textContent = "Forkert e-mail eller adgangskode.";
+      } else {
+        elements.loginError.textContent = "Kunne ikke logge ind på den lokale backend.";
+      }
+    } else if (error.code === "auth/wrong-password" || error.code === "auth/user-not-found") {
       elements.loginError.textContent = "Forkert e-mail eller adgangskode.";
     } else if (error.code === "auth/invalid-email") {
       elements.loginError.textContent = "Ugyldig e-mailadresse.";
@@ -160,7 +192,25 @@ async function handleLoginSubmit(event) {
 }
 
 function restoreSession() {
-  auth.onAuthStateChanged(async (user) => {
+  if (useLocalBackend) {
+    localBackend.onAuthStateChanged(async (user) => {
+      if (user) {
+        activeAdmin = {
+          email: user.email,
+          name: user.name || user.email,
+          role: user.role || "editor",
+        };
+        permissionErrorNotified = false;
+        showAdmin();
+        await bootstrapRemoteState();
+      } else {
+        showLogin();
+      }
+    });
+    return;
+  }
+
+  auth?.onAuthStateChanged(async (user) => {
     if (user) {
       activeAdmin = {
         email: user.email,
@@ -178,7 +228,11 @@ function restoreSession() {
 
 async function handleLogout() {
   try {
-    await auth.signOut();
+    if (useLocalBackend) {
+      await localBackend.signOut();
+    } else {
+      await auth.signOut();
+    }
   } catch (error) {
     console.warn("Kunne ikke logge ud", error);
   }
@@ -371,6 +425,29 @@ function stopSyncLoop() {
 }
 
 async function fetchRemoteState(force = false) {
+  if (useLocalBackend) {
+    try {
+      const payload = await localBackend.fetchState();
+      if (!payload) return;
+      if (
+        !force &&
+        lastSyncedAt &&
+        payload.updatedAt &&
+        payload.updatedAt === lastSyncedAt
+      ) {
+        return;
+      }
+      state = ensureStateDefaults(payload);
+      lastSyncedAt = state.updatedAt;
+      renderAll();
+      appendSyncLog("Data opdateret fra lokal backend.");
+    } catch (error) {
+      console.error("Kunne ikke hente state", error);
+      appendSyncLog(`Kunne ikke hente data fra lokal backend: ${error.message}`);
+    }
+    return;
+  }
+
   try {
     const docRef = db.collection(STATE_COLLECTION).doc(STATE_DOC_ID);
     const snap = await docRef.get();
@@ -408,14 +485,32 @@ async function pushStateToServer(forceCreate = false) {
   if (isSyncing && !forceCreate) return;
   isSyncing = true;
 
+  const now = new Date().toISOString();
+  const payloadState = serializeForStorage({
+    ...state,
+    updatedAt: now,
+  });
+
+  if (useLocalBackend) {
+    try {
+      const saved = await localBackend.saveState(payloadState);
+      state = ensureStateDefaults(saved);
+      lastSyncedAt = state.updatedAt;
+      renderAll();
+      appendSyncLog("Ændringer gemt i lokal backend.");
+    } catch (error) {
+      console.error("Kunne ikke gemme state", error);
+      appendSyncLog(`Kunne ikke gemme til lokal backend: ${error.message}`);
+    } finally {
+      isSyncing = false;
+    }
+    return;
+  }
+
   try {
     const docRef = db.collection(STATE_COLLECTION).doc(STATE_DOC_ID);
-    const now = new Date().toISOString();
     const payload = {
-      state: serializeForStorage({
-        ...state,
-        updatedAt: now,
-      }),
+      state: payloadState,
     };
 
     await docRef.set(payload, { merge: true });
@@ -919,7 +1014,7 @@ async function handleSlideUploadChange(event) {
     event.target.value = "";
     return;
   }
-  if (!storage) {
+  if (!useLocalBackend && !storage) {
     appendSyncLog("Firebase Storage er ikke initialiseret.");
     event.target.value = "";
     pendingSlideUploadId = null;
@@ -934,19 +1029,26 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    const path = createSlideStoragePath(slide, file);
-    const ref = storage.ref().child(path);
-    const snapshot = await ref.put(file);
-    const imageUrl = await snapshot.ref.getDownloadURL();
+    let uploadResult = null;
+    if (useLocalBackend) {
+      uploadResult = await localBackend.uploadSlide(file);
+    } else {
+      const path = createSlideStoragePath(slide, file);
+      const ref = storage.ref().child(path);
+      const snapshot = await ref.put(file);
+      const imageUrl = await snapshot.ref.getDownloadURL();
+      uploadResult = { downloadURL: imageUrl, storagePath: path };
+    }
 
     const previousPath = slide.storagePath;
-    slide.image = imageUrl;
-    slide.storagePath = path;
+    const newPath = uploadResult.storagePath || null;
+    slide.image = uploadResult.downloadURL || uploadResult.imageUrl || "";
+    slide.storagePath = newPath;
     slide.updatedAt = new Date().toISOString();
     renderScreensaverAdmin();
     commitState();
     appendSyncLog(`Opdaterede pauseskærmsbillede for ${slide.id}.`);
-    if (previousPath && previousPath !== path) {
+    if (previousPath && previousPath !== newPath) {
       removeSlideAsset(previousPath);
     }
   } catch (error) {
@@ -1017,6 +1119,18 @@ function updateSlidePreview(container, imageUrl) {
 
 function removeSlideAsset(storagePath) {
   if (!storagePath) return;
+  if (useLocalBackend) {
+    localBackend
+      .deleteSlide(storagePath)
+      .then(() => {
+        appendSyncLog("Fjernede slide-asset fra lokal backend.");
+      })
+      .catch((error) => {
+        console.warn("Kunne ikke fjerne slide-asset (lokal backend)", error);
+      });
+    return;
+  }
+  if (!storage) return;
   const ref = storage.ref().child(storagePath);
   ref
     .delete()
