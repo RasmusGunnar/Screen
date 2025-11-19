@@ -52,11 +52,15 @@
             </div>
           </div>
           <div class="nav-links">
-            <button type="button" class="nav-link active">Visitors</button>
-            <button type="button" class="nav-link">Employees</button>
-            <button type="button" class="nav-link">Spaces</button>
-            <button type="button" class="nav-link">Deliveries</button>
-            <button type="button" class="nav-link">Settings</button>
+            <button type="button" class="nav-link active" data-view="overview">
+              Overblik
+            </button>
+            <button type="button" class="nav-link" data-view="employees">
+              Medarbejdere
+            </button>
+            <button type="button" class="nav-link" data-view="settings">
+              Indstillinger
+            </button>
           </div>
           <div class="nav-actions">
             <button type="button" class="nav-icon" aria-label="Notifikationer">•</button>
@@ -81,204 +85,266 @@
           </div>
         </section>
 
-        <section class="toolbar" aria-label="Visninger og filtre">
+        <section class="toolbar" aria-label="Visninger og genveje">
           <div class="toolbar-group">
-            <button type="button" class="toolbar-link active">Timeline</button>
-            <button type="button" class="toolbar-link">Directory</button>
-            <button type="button" class="toolbar-link">Bookings</button>
-            <button type="button" class="toolbar-link">Resources</button>
+            <button
+              type="button"
+              class="toolbar-link active"
+              data-view="overview"
+              data-target="#panel-activity"
+            >
+              Timeline
+            </button>
+            <button
+              type="button"
+              class="toolbar-link"
+              data-view="employees"
+              data-target="#panel-employees"
+            >
+              Directory
+            </button>
+            <button
+              type="button"
+              class="toolbar-link"
+              data-view="settings"
+              data-target="#panel-slides"
+            >
+              Bookings
+            </button>
+            <button
+              type="button"
+              class="toolbar-link"
+              data-view="settings"
+              data-target="#panel-policies"
+            >
+              Resources
+            </button>
           </div>
           <div class="toolbar-group">
-            <button type="button" class="ghost">Filtre</button>
-            <button type="button" class="ghost">Eksport</button>
+            <button
+              type="button"
+              class="ghost"
+              data-view="overview"
+              data-target="#panel-activity"
+            >
+              Filtre
+            </button>
+            <button
+              type="button"
+              class="ghost"
+              data-view="overview"
+              data-target="#panel-export"
+            >
+              Eksport
+            </button>
           </div>
         </section>
 
-        <section class="panel panel-soft">
-          <header>
-            <h2>Synk-log</h2>
-          </header>
-          <div id="sync-log" class="sync-log"></div>
-        </section>
+        <div class="view-panels">
+          <section
+            class="view-panel"
+            data-view-panel="overview"
+            id="panel-overview"
+          >
+            <section class="panel panel-soft">
+              <header>
+                <h2>Synk-log</h2>
+              </header>
+              <div id="sync-log" class="sync-log"></div>
+            </section>
 
-        <section class="stat-grid" id="stat-grid" aria-label="Nøgletal"></section>
+            <section class="stat-grid" id="stat-grid" aria-label="Nøgletal"></section>
 
-        <section class="panel">
-          <header>
-            <h2>Aktivitetslog</h2>
-            <div class="filters">
-              <label>
-                <span>Type</span>
-                <select id="activity-type-filter">
-                  <option value="all">Alle typer</option>
-                  <option value="status-change">Statusændringer</option>
-                  <option value="guest-checkin">Gæster</option>
-                </select>
-              </label>
-              <label>
-                <span>Afdeling</span>
-                <select id="activity-department-filter">
-                  <option value="all">Alle afdelinger</option>
-                </select>
-              </label>
-            </div>
-          </header>
-          <div class="panel-body">
-            <div class="table-scroll">
-              <table class="activity-table">
-                <thead>
-                  <tr>
-                    <th>Dato</th>
-                    <th>Person</th>
-                    <th>Type</th>
-                    <th>Detaljer</th>
-                  </tr>
-                </thead>
-                <tbody id="activity-body"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel">
-          <header>
-            <h2>Eksport af log</h2>
-          </header>
-          <form id="export-form" class="panel-form">
-            <div class="form-row">
-              <label>
-                <span>Medarbejder</span>
-                <select id="export-employee"></select>
-              </label>
-              <label>
-                <span>Fra dato</span>
-                <input type="date" id="export-from" />
-              </label>
-              <label>
-                <span>Til dato</span>
-                <input type="date" id="export-to" />
-              </label>
-            </div>
-            <div class="form-row">
-              <label>
-                <input type="checkbox" id="export-include-guests" checked />
-                <span>Inkludér gæster</span>
-              </label>
-              <label>
-                <input type="checkbox" id="export-include-status" checked />
-                <span>Inkludér statusændringer</span>
-              </label>
-            </div>
-            <button type="submit">Eksportér CSV</button>
-            <p id="export-feedback" class="panel-feedback"></p>
-          </form>
-        </section>
-
-        <section class="panel">
-          <header>
-            <h2>Medarbejdere</h2>
-            <div class="panel-actions">
-              <button id="new-employee" type="button">Ny medarbejder</button>
-              <button id="reset-form" type="button" class="ghost">Ryd formular</button>
-            </div>
-          </header>
-          <div class="panel-body">
-            <form id="employee-form" class="panel-form">
-              <input type="hidden" id="employee-id" />
-              <div class="form-row">
-                <label>
-                  <span>Fornavn</span>
-                  <input id="employee-first" required />
-                </label>
-                <label>
-                  <span>Efternavn</span>
-                  <input id="employee-last" required />
-                </label>
-                <label>
-                  <span>Afdeling</span>
-                  <input id="employee-department" required />
-                </label>
+            <section class="panel" id="panel-activity">
+              <header>
+                <h2>Aktivitetslog</h2>
+                <div class="filters">
+                  <label>
+                    <span>Type</span>
+                    <select id="activity-type-filter">
+                      <option value="all">Alle typer</option>
+                      <option value="status-change">Statusændringer</option>
+                      <option value="guest-checkin">Gæster</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Afdeling</span>
+                    <select id="activity-department-filter">
+                      <option value="all">Alle afdelinger</option>
+                    </select>
+                  </label>
+                </div>
+              </header>
+              <div class="panel-body">
+                <div class="table-scroll">
+                  <table class="activity-table">
+                    <thead>
+                      <tr>
+                        <th>Dato</th>
+                        <th>Person</th>
+                        <th>Type</th>
+                        <th>Detaljer</th>
+                      </tr>
+                    </thead>
+                    <tbody id="activity-body"></tbody>
+                  </table>
+                </div>
               </div>
-              <div class="form-row">
-                <label>
-                  <span>Rolle/titel</span>
-                  <input id="employee-role" />
-                </label>
-                <label>
-                  <span>Kontaktoplysninger</span>
-                  <input id="employee-contact" />
-                </label>
-                <label>
-                  <span>Foto-URL</span>
-                  <input id="employee-photo" />
-                </label>
+            </section>
+
+            <section class="panel" id="panel-export">
+              <header>
+                <h2>Eksport af log</h2>
+              </header>
+              <form id="export-form" class="panel-form">
+                <div class="form-row">
+                  <label>
+                    <span>Medarbejder</span>
+                    <select id="export-employee"></select>
+                  </label>
+                  <label>
+                    <span>Fra dato</span>
+                    <input type="date" id="export-from" />
+                  </label>
+                  <label>
+                    <span>Til dato</span>
+                    <input type="date" id="export-to" />
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>
+                    <input type="checkbox" id="export-include-guests" checked />
+                    <span>Inkludér gæster</span>
+                  </label>
+                  <label>
+                    <input type="checkbox" id="export-include-status" checked />
+                    <span>Inkludér statusændringer</span>
+                  </label>
+                </div>
+                <button type="submit">Eksportér CSV</button>
+                <p id="export-feedback" class="panel-feedback"></p>
+              </form>
+            </section>
+          </section>
+
+          <section
+            class="view-panel hidden"
+            data-view-panel="employees"
+            id="panel-employees"
+          >
+            <section class="panel">
+              <header>
+                <h2>Medarbejdere</h2>
+                <div class="panel-actions">
+                  <button id="new-employee" type="button">Ny medarbejder</button>
+                  <button id="reset-form" type="button" class="ghost">Ryd formular</button>
+                </div>
+              </header>
+              <div class="panel-body">
+                <form id="employee-form" class="panel-form">
+                  <input type="hidden" id="employee-id" />
+                  <div class="form-row">
+                    <label>
+                      <span>Fornavn</span>
+                      <input id="employee-first" required />
+                    </label>
+                    <label>
+                      <span>Efternavn</span>
+                      <input id="employee-last" required />
+                    </label>
+                    <label>
+                      <span>Afdeling</span>
+                      <input id="employee-department" required />
+                    </label>
+                  </div>
+                  <div class="form-row">
+                    <label>
+                      <span>Rolle/titel</span>
+                      <input id="employee-role" />
+                    </label>
+                    <label>
+                      <span>Kontaktoplysninger</span>
+                      <input id="employee-contact" />
+                    </label>
+                    <label>
+                      <span>Foto-URL</span>
+                      <input id="employee-photo" />
+                    </label>
+                  </div>
+                  <button type="submit">Gem medarbejder</button>
+                </form>
+
+                <div id="employee-list" class="list"></div>
               </div>
-              <button type="submit">Gem medarbejder</button>
-            </form>
+            </section>
 
-            <div id="employee-list" class="list"></div>
-          </div>
-        </section>
+            <section class="panel">
+              <header>
+                <h2>Fravær</h2>
+              </header>
+              <div class="panel-body">
+                <div id="absence-list" class="list"></div>
+              </div>
+            </section>
+          </section>
 
-        <section class="panel">
-          <header>
-            <h2>Fravær</h2>
-          </header>
-          <div class="panel-body">
-            <div id="absence-list" class="list"></div>
-          </div>
-        </section>
+          <section
+            class="view-panel hidden"
+            data-view-panel="settings"
+            id="panel-settings"
+          >
+            <section class="panel" id="panel-slides">
+              <header>
+                <h2>Slides / pauseskærm</h2>
+                <div class="panel-actions">
+                  <button id="add-slide" type="button">Tilføj slide</button>
+                  <input
+                    type="file"
+                    id="slide-upload"
+                    accept="image/*"
+                    style="display: none"
+                  />
+                </div>
+              </header>
+              <div class="panel-body">
+                <div id="screensaver-admin" class="list"></div>
+              </div>
+            </section>
 
-        <section class="panel">
-          <header>
-            <h2>Slides / pauseskærm</h2>
-            <div class="panel-actions">
-              <button id="add-slide" type="button">Tilføj slide</button>
-              <input
-                type="file"
-                id="slide-upload"
-                accept="image/*"
-                style="display: none"
-              />
-            </div>
-          </header>
-          <div class="panel-body">
-            <div id="screensaver-admin" class="list"></div>
-          </div>
-        </section>
+            <section class="panel" id="panel-qr">
+              <header>
+                <h2>QR-selvbetjening</h2>
+              </header>
+              <div class="panel-body">
+                <form id="qr-form" class="panel-form">
+                  <label>
+                    <span>Medarbejder-URL</span>
+                    <input id="qr-employee" placeholder="https://..." />
+                  </label>
+                  <button type="submit">Gem</button>
+                </form>
+                <p>Aktuelt link:</p>
+                <p id="qr-employee-link"></p>
+              </div>
+            </section>
 
-        <section class="panel">
-          <header>
-            <h2>QR-selvbetjening</h2>
-          </header>
-          <div class="panel-body">
-            <form id="qr-form" class="panel-form">
-              <label>
-                <span>Medarbejder-URL</span>
-                <input id="qr-employee" placeholder="https://..." />
-              </label>
-              <button type="submit">Gem</button>
-            </form>
-            <p>Aktuelt link:</p>
-            <p id="qr-employee-link"></p>
-          </div>
-        </section>
-
-        <section class="panel">
-          <header>
-            <h2>Politikker</h2>
-          </header>
-          <div class="panel-body">
-            <form id="policy-form" class="panel-form">
-              <label>
-                <span>NDA-link (PDF)</span>
-                <input id="policy-nda-link" type="url" placeholder="https://..." />
-              </label>
-              <button type="submit">Gem</button>
-              <p id="policy-feedback" class="panel-feedback"></p>
-            </form>
-          </div>
-        </section>
+            <section class="panel" id="panel-policies">
+              <header>
+                <h2>Politikker</h2>
+              </header>
+              <div class="panel-body">
+                <form id="policy-form" class="panel-form">
+                  <label>
+                    <span>NDA-link (PDF)</span>
+                    <input id="policy-nda-link" type="url" placeholder="https://..." />
+                  </label>
+                  <button type="submit">Gem</button>
+                  <p id="policy-feedback" class="panel-feedback"></p>
+                </form>
+              </div>
+            </section>
+          </section>
+        </div>
       </main>
     </div>
 

@@ -29,6 +29,8 @@ let lastSyncedAt = null;
 let syncTimer = null;
 let isSyncing = false;
 const POLL_INTERVAL = 10000;
+let activeView = "overview";
+let permissionErrorNotified = false;
 
 // UI references
 const elements = {
@@ -75,6 +77,10 @@ const elements = {
   policyForm: document.getElementById("policy-form"),
   policyNdaLink: document.getElementById("policy-nda-link"),
   policyFeedback: document.getElementById("policy-feedback"),
+  navLinks: document.querySelectorAll(".nav-link[data-view]"),
+  viewPanels: document.querySelectorAll("[data-view-panel]"),
+  toolbarLinks: document.querySelectorAll(".toolbar-link[data-target]"),
+  toolbarTargets: document.querySelectorAll(".toolbar [data-target]"),
 };
 
 initializeAdmin();
@@ -104,12 +110,14 @@ function initializeAdmin() {
     elements.employeeFirst?.focus();
   });
   elements.screensaverAdmin?.addEventListener("input", handleSlideFieldChange);
+  elements.screensaverAdmin?.addEventListener("change", handleSlideFieldChange);
   elements.screensaverAdmin?.addEventListener("click", handleSlideAdminClick);
   elements.addSlide?.addEventListener("click", handleAddSlide);
   elements.slideUpload?.addEventListener("change", handleSlideUploadChange);
   elements.qrForm?.addEventListener("submit", handleQrSubmit);
   elements.policyForm?.addEventListener("submit", handlePolicySubmit);
 
+  setupNavigation();
   restoreSession();
 }
 
@@ -133,6 +141,7 @@ async function handleLoginSubmit(event) {
       name: user.displayName || user.email,
       role: "editor",
     };
+    permissionErrorNotified = false;
     elements.loginForm?.reset();
     showAdmin();
     await bootstrapRemoteState();
@@ -158,6 +167,7 @@ function restoreSession() {
         name: user.displayName || user.email,
         role: "editor",
       };
+      permissionErrorNotified = false;
       showAdmin();
       await bootstrapRemoteState();
     } else {
@@ -180,6 +190,9 @@ async function handleLogout() {
   showLogin();
   elements.loginForm?.reset();
   appendSyncLog("Du er nu logget ud.");
+  permissionErrorNotified = false;
+  activeView = "overview";
+  switchView(activeView);
 }
 
 function showLogin() {
@@ -196,6 +209,74 @@ function showAdmin() {
     const roleLabel = activeAdmin.role ? ` · rolle: ${activeAdmin.role}` : "";
     elements.activeAdmin.textContent = `Logget ind som ${activeAdmin.name} (${activeAdmin.email})${roleLabel}`;
   }
+}
+
+function setupNavigation() {
+  if (elements.navLinks?.forEach) {
+    elements.navLinks.forEach((button) => {
+      button.addEventListener("click", () => {
+        const view = button.dataset.view || "overview";
+        switchView(view);
+      });
+    });
+  }
+
+  if (elements.toolbarTargets?.forEach) {
+    elements.toolbarTargets.forEach((button) => {
+      button.addEventListener("click", () => {
+        const view = button.dataset.view;
+        if (view) {
+          switchView(view);
+        }
+        scrollToTarget(button.dataset.target);
+        if (button.classList.contains("toolbar-link")) {
+          markToolbarLink(button);
+        }
+      });
+    });
+  }
+
+  switchView(activeView);
+}
+
+function switchView(view) {
+  if (!view) return;
+  activeView = view;
+  if (elements.navLinks?.forEach) {
+    elements.navLinks.forEach((button) => {
+      button.classList.toggle("active", button.dataset.view === view);
+    });
+  }
+  const toolbarButtons = elements.toolbarLinks
+    ? Array.from(elements.toolbarLinks)
+    : [];
+  const matchingToolbar = toolbarButtons.find(
+    (button) => button.dataset.view === view
+  );
+  markToolbarLink(matchingToolbar || null);
+  updateViewPanels();
+}
+
+function updateViewPanels() {
+  if (elements.viewPanels?.forEach) {
+    elements.viewPanels.forEach((panel) => {
+      panel.classList.toggle("hidden", panel.dataset.viewPanel !== activeView);
+    });
+  }
+}
+
+function markToolbarLink(activeButton) {
+  if (!elements.toolbarLinks?.forEach) return;
+  elements.toolbarLinks.forEach((button) => {
+    button.classList.toggle("active", button === activeButton);
+  });
+}
+
+function scrollToTarget(selector) {
+  if (!selector) return;
+  const target = document.querySelector(selector);
+  if (!target) return;
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // ---------- STATE via FIRESTORE ----------
@@ -317,7 +398,9 @@ async function fetchRemoteState(force = false) {
     appendSyncLog("Data opdateret fra Firestore.");
   } catch (error) {
     console.error("Kunne ikke hente state", error);
-    appendSyncLog(`Kunne ikke hente data fra Firestore: ${error.message}`);
+    if (!handleFirestorePermissionError(error, "hente data")) {
+      appendSyncLog(`Kunne ikke hente data fra Firestore: ${error.message}`);
+    }
   }
 }
 
@@ -343,7 +426,9 @@ async function pushStateToServer(forceCreate = false) {
     appendSyncLog("Ændringer gemt i Firestore.");
   } catch (error) {
     console.error("Kunne ikke gemme state", error);
-    appendSyncLog(`Kunne ikke gemme til Firestore: ${error.message}`);
+    if (!handleFirestorePermissionError(error, "gemme ændringer")) {
+      appendSyncLog(`Kunne ikke gemme til Firestore: ${error.message}`);
+    }
   } finally {
     isSyncing = false;
   }
@@ -618,25 +703,46 @@ function renderScreensaverAdmin() {
         .join("");
 
       const slideId = escapeHtml(slide.id);
+      const previewImg = escapeHtml(slide.image || "");
+      const lastUpdated = slide.updatedAt
+        ? escapeHtml(formatDateTime(slide.updatedAt))
+        : "Ikke gemt endnu";
 
       return `
-        <div class="list-item" data-slide-id="${slideId}">
-          <div>
-            <strong>Slide ${index + 1}</strong>
-            <small>ID: ${slideId}</small>
-            <label><span>Tema</span><select data-field="theme">${themeOptions}</select></label>
-            <label><span>Overskrift</span><input data-field="headline" value="${escapeHtml(
-              slide.headline
-            )}" /></label>
-            <label><span>Beskrivelse</span><input data-field="description" value="${escapeHtml(
-              slide.description
-            )}" /></label>
-            <label><span>Billede-URL</span><input data-field="image" value="${escapeHtml(
-              slide.image || ""
-            )}" /></label>
+        <div class="list-item slide-admin" data-slide-id="${slideId}">
+          <div class="slide-admin-main">
+            <div class="slide-preview" aria-live="polite">
+              <img
+                src="${previewImg}"
+                alt="Forhåndsvisning af slide"
+                data-slide-preview-img
+                class="${slide.image ? "" : "hidden"}"
+              />
+              <span data-slide-preview-placeholder class="${slide.image ? "hidden" : ""}">
+                Intet billede endnu
+              </span>
+            </div>
+            <div class="slide-admin-fields">
+              <div>
+                <strong>Slide ${index + 1}</strong>
+                <small>ID: ${slideId}</small>
+              </div>
+              <label><span>Tema</span><select data-field="theme">${themeOptions}</select></label>
+              <label><span>Overskrift</span><input data-field="headline" value="${escapeHtml(
+                slide.headline
+              )}" /></label>
+              <label><span>Beskrivelse</span><input data-field="description" value="${escapeHtml(
+                slide.description
+              )}" /></label>
+              <label><span>Billede-URL</span><input data-field="image" value="${escapeHtml(
+                slide.image || ""
+              )}" /></label>
+              <small class="slide-meta">Sidst opdateret: ${lastUpdated}</small>
+            </div>
           </div>
           <div class="list-actions">
             <button type="button" data-action="upload">Upload</button>
+            <button type="button" data-action="save" class="ghost">Gem</button>
             <button type="button" data-action="up">Op</button>
             <button type="button" data-action="down">Ned</button>
             <button type="button" data-action="delete">Slet</button>
@@ -737,6 +843,9 @@ function handleSlideFieldChange(event) {
   if (!slide) return;
   slide[field] = event.target.value;
   slide.updatedAt = new Date().toISOString();
+  if (field === "image") {
+    updateSlidePreview(container, slide.image);
+  }
   commitState();
 }
 
@@ -746,10 +855,18 @@ function handleSlideAdminClick(event) {
   const container = event.target.closest("[data-slide-id]");
   if (!container) return;
   const slideId = container.dataset.slideId;
+  const slide = state.screensaver.slides.find((item) => item.id === slideId);
+  if (!slide) return;
 
   if (action === "upload") {
     pendingSlideUploadId = slideId;
     elements.slideUpload?.click();
+  }
+
+  if (action === "save") {
+    slide.updatedAt = new Date().toISOString();
+    commitState();
+    appendSyncLog(`Gemte slide ${slideId}.`);
   }
 
   if (action === "up") {
@@ -802,6 +919,12 @@ async function handleSlideUploadChange(event) {
     event.target.value = "";
     return;
   }
+  if (!storage) {
+    appendSyncLog("Firebase Storage er ikke initialiseret.");
+    event.target.value = "";
+    pendingSlideUploadId = null;
+    return;
+  }
 
   const slide = state.screensaver.slides.find(
     (item) => item.id === pendingSlideUploadId
@@ -811,18 +934,21 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    const dataUrl = await readFileAsDataUrl(file);
-    const path = `${STORAGE_FOLDER}/${slide.id}`;
+    const path = createSlideStoragePath(slide, file);
     const ref = storage.ref().child(path);
-    const snapshot = await ref.putString(dataUrl, "data_url");
+    const snapshot = await ref.put(file);
     const imageUrl = await snapshot.ref.getDownloadURL();
 
+    const previousPath = slide.storagePath;
     slide.image = imageUrl;
     slide.storagePath = path;
     slide.updatedAt = new Date().toISOString();
     renderScreensaverAdmin();
     commitState();
-    appendSyncLog("Opdaterede pauseskærmsbillede via Firebase Storage.");
+    appendSyncLog(`Opdaterede pauseskærmsbillede for ${slide.id}.`);
+    if (previousPath && previousPath !== path) {
+      removeSlideAsset(previousPath);
+    }
   } catch (error) {
     console.error("Fejl ved upload af slide", error);
     appendSyncLog(`Kunne ikke uploade billede: ${error.message}`);
@@ -868,17 +994,26 @@ function handlePolicySubmit(event) {
   appendSyncLog("Opdaterede NDA-link.");
 }
 
-// ---------- HJÆLPEFUNKTIONER ----------
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () =>
-      reject(reader.error || new Error("Kunne ikke læse filen"));
-    reader.readAsDataURL(file);
-  });
+function updateSlidePreview(container, imageUrl) {
+  if (!container) return;
+  const previewImg = container.querySelector("[data-slide-preview-img]");
+  const previewPlaceholder = container.querySelector(
+    "[data-slide-preview-placeholder]"
+  );
+  if (previewImg) {
+    if (imageUrl) {
+      previewImg.src = imageUrl;
+      previewImg.classList.remove("hidden");
+      previewPlaceholder?.classList.add("hidden");
+    } else {
+      previewImg.src = "";
+      previewImg.classList.add("hidden");
+      previewPlaceholder?.classList.remove("hidden");
+    }
+  }
 }
+
+// ---------- HJÆLPEFUNKTIONER ----------
 
 function removeSlideAsset(storagePath) {
   if (!storagePath) return;
@@ -891,6 +1026,13 @@ function removeSlideAsset(storagePath) {
     .catch((error) => {
       console.warn("Kunne ikke fjerne slide-asset", error);
     });
+}
+
+function createSlideStoragePath(slide, file) {
+  const rawName = (file?.name || "").toLowerCase();
+  const extensionMatch = rawName.match(/\.([a-z0-9]+)$/i);
+  const extension = (extensionMatch?.[1] || "jpg").replace(/[^a-z0-9]/gi, "");
+  return `${STORAGE_FOLDER}/${slide.id}.${extension || "jpg"}`;
 }
 
 function handleExportSubmit(event) {
@@ -1006,6 +1148,25 @@ function appendSyncLog(message) {
   } else {
     console.info(`[ADMIN SYNC ${timestamp}] ${message}`);
   }
+}
+
+function handleFirestorePermissionError(error, actionLabel) {
+  const isPermissionError =
+    error?.code === "permission-denied" ||
+    error?.message?.toLowerCase().includes("missing or insufficient permissions");
+  if (!isPermissionError) {
+    return false;
+  }
+
+  if (!permissionErrorNotified) {
+    const readableAction = actionLabel || "læse/skrive";
+    appendSyncLog(
+      `Firestore nægtede adgang til at ${readableAction}. Tjek sikkerhedsregler og rettigheder for den pågældende bruger.`
+    );
+    permissionErrorNotified = true;
+  }
+  stopSyncLoop();
+  return true;
 }
 
 function formatDateTime(value) {
