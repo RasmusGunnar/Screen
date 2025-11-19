@@ -4,10 +4,16 @@
     <meta charset="UTF-8" />
     <title>SUBRA · Adminportal</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="admin.css" />
   </head>
   <body>
-    <div id="admin-app">
+    <div id="admin-app" class="admin-shell">
       <!-- LOGIN VIEW -->
       <section id="login-view" class="auth-panel">
         <div class="auth-inner">
@@ -37,19 +43,61 @@
 
       <!-- MAIN ADMIN -->
       <main id="admin-main" class="hidden">
-        <header class="admin-header">
-          <div class="header-left">
+        <nav class="top-nav" aria-label="Primær navigation">
+          <div class="nav-brand">
+            <span class="brand-pill">SUBRA</span>
+            <div class="nav-location">
+              <strong>Head Office</strong>
+              <small>Senest opdateret for få sekunder siden</small>
+            </div>
+          </div>
+          <div class="nav-links">
+            <button type="button" class="nav-link active">Visitors</button>
+            <button type="button" class="nav-link">Employees</button>
+            <button type="button" class="nav-link">Spaces</button>
+            <button type="button" class="nav-link">Deliveries</button>
+            <button type="button" class="nav-link">Settings</button>
+          </div>
+          <div class="nav-actions">
+            <button type="button" class="nav-icon" aria-label="Notifikationer">•</button>
+            <div class="nav-avatar" aria-hidden="true">SJ</div>
+          </div>
+        </nav>
+
+        <section class="hero-panel">
+          <div class="hero-copy">
+            <p class="eyebrow">Kontorstatus</p>
             <h1>SUBRA Workplace Admin</h1>
             <p id="active-admin"></p>
+            <div class="status-pills" aria-label="Arbejdsmode">
+              <button type="button" class="status-pill active">On-site</button>
+              <button type="button" class="status-pill">Remote</button>
+              <button type="button" class="status-pill">Off-site</button>
+            </div>
           </div>
-          <div class="header-right">
-            <button id="sync-now">Synkroniser nu</button>
+          <div class="hero-actions">
+            <button id="sync-now" class="ghost">Synkroniser nu</button>
             <button id="logout">Log ud</button>
           </div>
-        </header>
+        </section>
 
-        <section class="sync-log-panel">
-          <h2>Synk-log</h2>
+        <section class="toolbar" aria-label="Visninger og filtre">
+          <div class="toolbar-group">
+            <button type="button" class="toolbar-link active">Timeline</button>
+            <button type="button" class="toolbar-link">Directory</button>
+            <button type="button" class="toolbar-link">Bookings</button>
+            <button type="button" class="toolbar-link">Resources</button>
+          </div>
+          <div class="toolbar-group">
+            <button type="button" class="ghost">Filtre</button>
+            <button type="button" class="ghost">Eksport</button>
+          </div>
+        </section>
+
+        <section class="panel panel-soft">
+          <header>
+            <h2>Synk-log</h2>
+          </header>
           <div id="sync-log" class="sync-log"></div>
         </section>
 
@@ -76,17 +124,19 @@
             </div>
           </header>
           <div class="panel-body">
-            <table>
-              <thead>
-                <tr>
-                  <th>Dato</th>
-                  <th>Person</th>
-                  <th>Type</th>
-                  <th>Detaljer</th>
-                </tr>
-              </thead>
-              <tbody id="activity-body"></tbody>
-            </table>
+            <div class="table-scroll">
+              <table class="activity-table">
+                <thead>
+                  <tr>
+                    <th>Dato</th>
+                    <th>Person</th>
+                    <th>Type</th>
+                    <th>Detaljer</th>
+                  </tr>
+                </thead>
+                <tbody id="activity-body"></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
@@ -129,7 +179,7 @@
             <h2>Medarbejdere</h2>
             <div class="panel-actions">
               <button id="new-employee" type="button">Ny medarbejder</button>
-              <button id="reset-form" type="button">Ryd formular</button>
+              <button id="reset-form" type="button" class="ghost">Ryd formular</button>
             </div>
           </header>
           <div class="panel-body">
