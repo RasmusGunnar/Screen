@@ -97,4 +97,153 @@
           <form id="export-form" class="panel-form">
             <div class="form-row">
               <label>
-                <span>Medarbejder<
+                <span>Medarbejder</span>
+                <select id="export-employee"></select>
+              </label>
+              <label>
+                <span>Fra dato</span>
+                <input type="date" id="export-from" />
+              </label>
+              <label>
+                <span>Til dato</span>
+                <input type="date" id="export-to" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                <input type="checkbox" id="export-include-guests" checked />
+                <span>Inkludér gæster</span>
+              </label>
+              <label>
+                <input type="checkbox" id="export-include-status" checked />
+                <span>Inkludér statusændringer</span>
+              </label>
+            </div>
+            <button type="submit">Eksportér CSV</button>
+            <p id="export-feedback" class="panel-feedback"></p>
+          </form>
+        </section>
+
+        <section class="panel">
+          <header>
+            <h2>Medarbejdere</h2>
+            <div class="panel-actions">
+              <button id="new-employee" type="button">Ny medarbejder</button>
+              <button id="reset-form" type="button">Ryd formular</button>
+            </div>
+          </header>
+          <div class="panel-body">
+            <form id="employee-form" class="panel-form">
+              <input type="hidden" id="employee-id" />
+              <div class="form-row">
+                <label>
+                  <span>Fornavn</span>
+                  <input id="employee-first" required />
+                </label>
+                <label>
+                  <span>Efternavn</span>
+                  <input id="employee-last" required />
+                </label>
+                <label>
+                  <span>Afdeling</span>
+                  <input id="employee-department" required />
+                </label>
+              </div>
+              <div class="form-row">
+                <label>
+                  <span>Rolle/titel</span>
+                  <input id="employee-role" />
+                </label>
+                <label>
+                  <span>Kontaktoplysninger</span>
+                  <input id="employee-contact" />
+                </label>
+                <label>
+                  <span>Foto-URL</span>
+                  <input id="employee-photo" />
+                </label>
+              </div>
+              <button type="submit">Gem medarbejder</button>
+            </form>
+
+            <div id="employee-list" class="list"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <header>
+            <h2>Fravær</h2>
+          </header>
+          <div class="panel-body">
+            <div id="absence-list" class="list"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <header>
+            <h2>Slides / pauseskærm</h2>
+            <div class="panel-actions">
+              <button id="add-slide" type="button">Tilføj slide</button>
+              <input
+                type="file"
+                id="slide-upload"
+                accept="image/*"
+                style="display: none"
+              />
+            </div>
+          </header>
+          <div class="panel-body">
+            <div id="screensaver-admin" class="list"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <header>
+            <h2>QR-selvbetjening</h2>
+          </header>
+          <div class="panel-body">
+            <form id="qr-form" class="panel-form">
+              <label>
+                <span>Medarbejder-URL</span>
+                <input id="qr-employee" placeholder="https://..." />
+              </label>
+              <button type="submit">Gem</button>
+            </form>
+            <p>Aktuelt link:</p>
+            <p id="qr-employee-link"></p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <header>
+            <h2>Politikker</h2>
+          </header>
+          <div class="panel-body">
+            <form id="policy-form" class="panel-form">
+              <label>
+                <span>NDA-link (PDF)</span>
+                <input id="policy-nda-link" type="url" placeholder="https://..." />
+              </label>
+              <button type="submit">Gem</button>
+              <p id="policy-feedback" class="panel-feedback"></p>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Firebase SDK'er (compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+    <!-- Konfiguration -->
+    <script src="firebase-config.js"></script>
+    <script src="local-config.js"></script>
+    <script src="defaults.js"></script>
+
+    <!-- Admin-logik -->
+    <script src="admin.js"></script>
+  </body>
+</html>
