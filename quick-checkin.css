@@ -11,6 +11,10 @@
   --warning: #f5a524;
   --border: rgba(15, 23, 42, 0.1);
   --shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+  --radius-lg: 24px;
+  --radius-md: 16px;
+  --radius-sm: 12px;
+  --radius-pill: 999px;
 }
 
 * {
@@ -27,6 +31,48 @@ body {
   min-height: 100vh;
 }
 
+.app-bar {
+  background: linear-gradient(120deg, #ffffff 0%, rgba(255, 107, 74, 0.06) 60%, rgba(95, 191, 75, 0.06) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 18px 22px;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.app-brand img {
+  width: 60px;
+  height: 60px;
+}
+
+.app-bar-actions {
+  display: grid;
+  justify-items: end;
+  align-content: center;
+  gap: 8px;
+  text-align: right;
+}
+
+.app-ghost {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.app-ghost:hover {
+  border-color: rgba(255, 107, 74, 0.4);
+  color: var(--accent);
+}
+
 .qc-shell {
   max-width: 960px;
   margin: 0 auto;
@@ -37,26 +83,19 @@ body {
 }
 
 .qc-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
-  background: linear-gradient(120deg, rgba(255, 107, 74, 0.14), rgba(95, 191, 75, 0.08));
-  border-radius: 18px;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
+  gap: 18px;
 }
 
 .qc-brand {
-  display: flex;
-  align-items: center;
   gap: 16px;
 }
 
 .qc-brand img {
-  width: 64px;
-  height: 64px;
+  width: 60px;
+  height: 60px;
 }
 
 .eyebrow {
@@ -90,12 +129,7 @@ body {
 }
 
 #qc-sync {
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 10px 14px;
-  border-radius: 10px;
-  cursor: pointer;
+  justify-self: end;
 }
 
 .qc-controls {
@@ -264,12 +298,12 @@ body {
 
 @media (max-width: 640px) {
   .qc-header {
-    flex-direction: column;
-    align-items: flex-start;
+    grid-template-columns: 1fr;
   }
 
   .qc-status {
     width: 100%;
     justify-items: start;
+    text-align: left;
   }
 }

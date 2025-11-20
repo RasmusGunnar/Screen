@@ -28,6 +28,20 @@ body {
   color: var(--text);
 }
 
+.app-bar {
+  background: linear-gradient(120deg, #ffffff 0%, rgba(255, 107, 74, 0.06) 60%, rgba(95, 191, 75, 0.06) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 18px 24px;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 a {
   color: var(--accent);
 }
@@ -180,10 +194,6 @@ button.ghost:hover,
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 24px;
-  background: var(--surface);
-  padding: 18px 26px;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
 }
 
 .nav-brand {
