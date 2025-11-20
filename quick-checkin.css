@@ -133,6 +133,17 @@ body {
   gap: 14px;
 }
 
+.personal-mode .qc-controls,
+.personal-mode .qc-counter,
+.personal-mode .qc-footer {
+  display: none;
+}
+
+.personal-mode .qc-employee-list {
+  display: flex;
+  justify-content: center;
+}
+
 .qc-empty {
   background: var(--surface);
   border-radius: 14px;
@@ -150,6 +161,18 @@ body {
   display: grid;
   gap: 10px;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+}
+
+.qc-card-personal {
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+  background: linear-gradient(160deg, rgba(255, 107, 74, 0.1), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.qc-card-personal .qc-actions {
+  justify-content: center;
 }
 
 .qc-card header {

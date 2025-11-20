@@ -9,6 +9,7 @@ let stateUnsubscribe = null;
 let lastSyncedAt = null;
 let syncTimer = null;
 const POLL_INTERVAL = 15000;
+const LOCAL_SNAPSHOT_KEY = 'subra-kiosk-snapshot';
 
 applyLocalConfig(window.SUBRA_LOCAL_CONFIG || null);
 
@@ -78,7 +79,8 @@ function getAdapterOptions() {
   };
 }
 
-let state = ensureStateDefaults();
+const savedSnapshot = loadLocalSnapshot();
+let state = ensureStateDefaults(savedSnapshot || {});
 let inactivityTimer;
 let activeModalEmployee = null;
 let screensaverInterval;
@@ -145,6 +147,7 @@ async function init() {
   attachEvents();
   renderSlides();
   renderAll();
+  persistLocalSnapshot(state);
   await bootstrapRemoteState();
   restartScreensaverCycle();
   tickClock();
@@ -238,6 +241,28 @@ function serializeForStorage(data) {
   );
 }
 
+function loadLocalSnapshot() {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LOCAL_SNAPSHOT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn('Kunne ikke indlæse lokal snapshot', error);
+    return null;
+  }
+}
+
+function persistLocalSnapshot(data) {
+  if (typeof localStorage === 'undefined' || !data) return;
+  try {
+    const payload = serializeForStorage(data);
+    localStorage.setItem(LOCAL_SNAPSHOT_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.warn('Kunne ikke gemme lokal snapshot', error);
+  }
+}
+
 function cloneState(source = state) {
   return JSON.parse(JSON.stringify(source));
 }
@@ -277,6 +302,7 @@ function commitState(nextState) {
   state.settings.kiosk.id =
     state.settings.kiosk.id || LOCAL_CONFIG?.stateDocId || LOCAL_CONFIG?.firebase?.stateDocId || 'local';
   state.settings.kiosk.lastSynced = state.updatedAt;
+  persistLocalSnapshot(state);
   void pushStateToBackend();
 }
 
@@ -306,6 +332,7 @@ function startSyncLoop() {
         }
         state = normalized;
         lastSyncedAt = state.updatedAt;
+        persistLocalSnapshot(state);
         renderSlides();
         renderAll();
         updateQrCodes();
@@ -358,6 +385,7 @@ async function fetchRemoteState(force = false) {
 
     state = ensureStateDefaults(remoteState);
     lastSyncedAt = state.updatedAt;
+    persistLocalSnapshot(state);
     renderSlides();
     renderAll();
     updateQrCodes();
@@ -379,6 +407,7 @@ async function pushStateToBackend() {
     const saved = await dataAdapter.saveState(serializeForStorage(state));
     state = ensureStateDefaults(saved);
     lastSyncedAt = state.updatedAt;
+    persistLocalSnapshot(state);
     renderSlides();
     renderAll();
     appendSyncOutput('Ændringer gemt i backend.');
@@ -1246,19 +1275,52 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    const dataUrl = await readFileAsDataUrl(file);
-    slide.image = dataUrl;
-    slide.storagePath = null;
+    const previousStoragePath = slide.storagePath;
+    let uploadResult = null;
+
+    if (adapterReady && dataAdapter?.uploadSlide) {
+      uploadResult = await dataAdapter.uploadSlide(file);
+    }
+
+    if (uploadResult?.downloadURL) {
+      slide.image = uploadResult.downloadURL;
+      slide.storagePath = uploadResult.storagePath || null;
+    } else {
+      const dataUrl = await readFileAsDataUrl(file);
+      slide.image = dataUrl;
+      slide.storagePath = null;
+    }
+
     slide.uploadedName = file.name || 'upload';
     slide.updatedAt = new Date().toISOString();
 
     renderSlides();
     renderScreensaverAdmin();
     commitState();
-    appendSyncOutput('Opdaterede pauseskærmsbilledet lokalt – intet ekstra backend-setup krævet.');
+    appendSyncOutput(
+      uploadResult
+        ? 'Opdaterede pauseskærmsbilledet via valgt backend og ryddede op i gamle filer.'
+        : 'Opdaterede pauseskærmsbilledet lokalt – intet ekstra backend-setup krævet.'
+    );
+
+    if (previousStoragePath && previousStoragePath !== slide.storagePath) {
+      void removeSlideAsset(previousStoragePath);
+    }
   } catch (error) {
     console.error('Fejl ved upload af slide', error);
-    appendSyncOutput(`Kunne ikke uploade billede: ${error.message}`);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      slide.image = dataUrl;
+      slide.storagePath = null;
+      slide.uploadedName = file.name || 'upload';
+      slide.updatedAt = new Date().toISOString();
+      renderSlides();
+      renderScreensaverAdmin();
+      commitState();
+      appendSyncOutput('Kunne ikke uploade til backend, men gemte billedet lokalt.');
+    } catch (fallbackError) {
+      appendSyncOutput(`Kunne ikke uploade billede: ${fallbackError.message}`);
+    }
   }
 }
 
