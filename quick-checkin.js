@@ -8,6 +8,8 @@ let adapterReady = false;
 let state = ensureStateDefaults();
 let stateUnsubscribe = null;
 let lastSyncedAt = null;
+const personalEmployeeId = getPersonalEmployeeId();
+const isPersonalMode = Boolean(personalEmployeeId);
 
 const STATUS_LABELS = {
   onsite: 'På kontoret',
@@ -23,6 +25,10 @@ const elements = {
   statusText: document.getElementById('qc-status-text'),
   counter: document.getElementById('qc-counter'),
   syncButton: document.getElementById('qc-sync'),
+  shell: document.querySelector('.qc-shell'),
+  heading: document.querySelector('.qc-header h1'),
+  eyebrow: document.querySelector('.qc-header .eyebrow'),
+  subline: document.querySelector('.qc-header .subline'),
 };
 
 initQuickCheckin();
@@ -51,8 +57,35 @@ function getAdapterOptions() {
 
 async function initQuickCheckin() {
   applyLocalConfig(window.SUBRA_LOCAL_CONFIG || {});
+  applyPersonalLayout();
   setupEvents();
   await bootstrapState();
+}
+
+function getPersonalEmployeeId() {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  return (
+    params.get('employee') ||
+    params.get('employeeId') ||
+    params.get('employee_id') ||
+    params.get('id') ||
+    null
+  );
+}
+
+function applyPersonalLayout() {
+  if (!isPersonalMode) return;
+  elements.shell?.classList.add('personal-mode');
+  if (elements.counter) elements.counter.textContent = 'Personligt check-in';
+  if (elements.search) {
+    elements.search.value = '';
+    elements.search.setAttribute('disabled', 'true');
+  }
+  if (elements.eyebrow) elements.eyebrow.textContent = 'Personligt kort';
+  if (elements.heading) elements.heading.textContent = 'Velkommen';
+  if (elements.subline)
+    elements.subline.textContent = 'Dette link er kun til dig – opdater din status her.';
 }
 
 function setupEvents() {
@@ -135,20 +168,34 @@ async function refreshFromBackend(showNotice = false) {
 
 function renderEmployees() {
   if (!elements.list) return;
-  const query = elements.search?.value?.toLowerCase()?.trim() || '';
-  const employees = state.employees
-    .slice()
-    .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'da', { sensitivity: 'base' }))
-    .filter((emp) => {
+  const query = isPersonalMode ? '' : elements.search?.value?.toLowerCase()?.trim() || '';
+  let employees = state.employees.slice().sort((a, b) =>
+    `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'da', {
+      sensitivity: 'base',
+    })
+  );
+
+  if (isPersonalMode) {
+    const personal = findPersonalEmployee(employees);
+    employees = personal ? [personal] : [];
+    if (personal) {
+      updatePersonalHeader(personal);
+    }
+    elements.counter.textContent = employees.length ? 'Personligt medarbejderkort' : 'Ikke fundet endnu';
+  } else {
+    employees = employees.filter((emp) => {
       if (!query) return true;
       const haystack = `${emp.firstName} ${emp.lastName} ${emp.department}`.toLowerCase();
       return haystack.includes(query);
     });
-
-  elements.counter.textContent = `${employees.length} medarbejdere`;
+    elements.counter.textContent = `${employees.length} medarbejdere`;
+  }
 
   if (!employees.length) {
-    elements.list.innerHTML = '<p class="qc-empty">Ingen medarbejdere matchede din søgning.</p>';
+    const emptyMessage = isPersonalMode
+      ? 'Linket matcher ikke en medarbejder endnu.'
+      : 'Ingen medarbejdere matchede din søgning.';
+    elements.list.innerHTML = `<p class="qc-empty">${emptyMessage}</p>`;
     return;
   }
 
@@ -157,6 +204,9 @@ function renderEmployees() {
     const card = document.createElement('article');
     card.className = 'qc-card';
     card.dataset.id = employee.id;
+    if (isPersonalMode) {
+      card.classList.add('qc-card-personal');
+    }
 
     const header = document.createElement('header');
     const title = document.createElement('div');
@@ -208,6 +258,29 @@ function renderEmployees() {
     card.append(header, statusText, actions);
     elements.list.appendChild(card);
   });
+}
+
+function findPersonalEmployee(employees = []) {
+  if (!isPersonalMode || !personalEmployeeId) return null;
+  const needle = personalEmployeeId.toLowerCase();
+
+  return (
+    employees.find((emp) => (emp.id || '').toLowerCase() === needle) ||
+    employees.find(
+      (emp) => `${emp.firstName} ${emp.lastName}`.toLowerCase().trim() === needle
+    ) ||
+    employees.find(
+      (emp) => `${emp.firstName}-${emp.lastName}`.toLowerCase().replace(/\s+/g, '-') === needle
+    )
+  );
+}
+
+function updatePersonalHeader(employee) {
+  if (!isPersonalMode || !employee) return;
+  if (elements.heading) elements.heading.textContent = `${employee.firstName} ${employee.lastName}`;
+  if (elements.subline)
+    elements.subline.textContent = 'Skjult quicklink til at opdatere din status med ét klik.';
+  if (elements.eyebrow) elements.eyebrow.textContent = 'Personligt check-in';
 }
 
 function handleAction(employeeId, action) {
