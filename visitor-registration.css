@@ -1,0 +1,288 @@
+:root {
+  --bg: #0f172a;
+  --surface: #111827;
+  --surface-soft: #1e293b;
+  --surface-highlight: rgba(255, 255, 255, 0.06);
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #3f7f72;
+  --accent-strong: #4ade80;
+  --danger: #f87171;
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: radial-gradient(circle at 18% 22%, rgba(74, 222, 128, 0.12), transparent 40%),
+    radial-gradient(circle at 80% 0%, rgba(63, 127, 114, 0.12), transparent 36%),
+    var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.vr-shell {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 32px 20px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.vr-header {
+  background: linear-gradient(120deg, rgba(63, 127, 114, 0.18), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 18px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  box-shadow: var(--shadow);
+}
+
+.vr-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.vr-brand img {
+  width: 64px;
+  height: 64px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.vr-header h1 {
+  margin: 0 0 6px;
+  font-size: 1.8rem;
+}
+
+.subline {
+  margin: 0;
+  color: var(--muted);
+}
+
+.vr-status {
+  text-align: right;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+#vr-status-text {
+  margin: 0;
+  color: var(--muted);
+}
+
+#vr-sync {
+  background: var(--surface-soft);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.vr-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 3fr 2fr;
+  align-items: start;
+}
+
+.vr-card {
+  background: var(--surface);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+
+.vr-card h2 {
+  margin: 0 0 14px;
+}
+
+.vr-field {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.vr-field span {
+  color: var(--muted);
+}
+
+.vr-field input,
+.vr-field select {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.vr-field input::placeholder {
+  color: var(--muted);
+}
+
+.vr-policy {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  margin: 12px 0 18px;
+}
+
+.vr-policy legend {
+  color: var(--muted);
+  padding: 0 6px;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.checkbox input {
+  width: 18px;
+  height: 18px;
+}
+
+.policy-link {
+  color: var(--accent-strong);
+}
+
+.signature-block {
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+  padding-top: 12px;
+  margin-top: 8px;
+  display: grid;
+  gap: 10px;
+}
+
+.signature-header p {
+  margin: 0;
+}
+
+.signature-header small {
+  color: var(--muted);
+}
+
+.signature-pad {
+  background: var(--surface-soft);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.signature-pad canvas {
+  width: 100%;
+  height: 140px;
+  display: block;
+}
+
+.signature-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  color: var(--muted);
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.primary {
+  background: linear-gradient(120deg, #3f7f72, #4ade80);
+  border: none;
+  color: #0b1220;
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  width: 100%;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.form-hint {
+  color: var(--muted);
+  margin: 10px 0 0;
+}
+
+.vr-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.vr-log-count {
+  background: rgba(74, 222, 128, 0.12);
+  color: var(--accent-strong);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(74, 222, 128, 0.2);
+}
+
+.vr-guest-log {
+  display: grid;
+  gap: 10px;
+}
+
+.vr-guest-log .entry {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-soft);
+}
+
+.vr-guest-log strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.vr-guest-log span {
+  color: var(--muted);
+}
+
+.vr-guest-log small {
+  color: var(--muted);
+}
+
+.vr-empty {
+  color: var(--muted);
+}
+
+.vr-footer {
+  text-align: center;
+  color: var(--muted);
+}
+
+@media (max-width: 960px) {
+  .vr-grid {
+    grid-template-columns: 1fr;
+  }
+}

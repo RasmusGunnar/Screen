@@ -8,32 +8,32 @@ let adapterReady = false;
 let state = ensureStateDefaults();
 let stateUnsubscribe = null;
 let lastSyncedAt = null;
-const personalEmployeeId = getPersonalEmployeeId();
-const isPersonalMode = Boolean(personalEmployeeId);
-
-const STATUS_LABELS = {
-  onsite: 'På kontoret',
-  remote: 'Hjemmearbejde',
-  left: 'Gået hjem for i dag',
-  away: 'Fravær',
-  unknown: 'Ikke registreret',
-};
-const DAILY_RESET_HOUR = 12;
 let dailyResetTimer = null;
 
+const DAILY_RESET_HOUR = 12;
+
 const elements = {
-  search: document.getElementById('qc-search'),
-  list: document.getElementById('qc-employee-list'),
-  statusText: document.getElementById('qc-status-text'),
-  counter: document.getElementById('qc-counter'),
-  syncButton: document.getElementById('qc-sync'),
-  shell: document.querySelector('.qc-shell'),
-  heading: document.querySelector('.qc-header h1'),
-  eyebrow: document.querySelector('.qc-header .eyebrow'),
-  subline: document.querySelector('.qc-header .subline'),
+  form: document.getElementById('vr-guest-form'),
+  host: document.getElementById('vr-guest-host'),
+  log: document.getElementById('vr-guest-log'),
+  logCount: document.getElementById('vr-log-count'),
+  ndaLink: document.getElementById('vr-guest-nda-link'),
+  signature: document.getElementById('vr-guest-signature'),
+  signatureStatus: document.getElementById('vr-signature-status'),
+  signatureClear: document.getElementById('vr-signature-clear'),
+  signatureData: document.getElementById('vr-guest-signature-data'),
+  statusText: document.getElementById('vr-status-text'),
+  syncButton: document.getElementById('vr-sync'),
 };
 
-initQuickCheckin();
+const signaturePadState = {
+  isDrawing: false,
+  hasSignature: false,
+  ctx: null,
+  canvas: null,
+};
+
+initVisitorRegistration();
 
 function applyLocalConfig(config) {
   LOCAL_CONFIG = config || {};
@@ -57,48 +57,26 @@ function getAdapterOptions() {
   };
 }
 
-async function initQuickCheckin() {
+async function initVisitorRegistration() {
   applyLocalConfig(window.SUBRA_LOCAL_CONFIG || {});
-  applyPersonalLayout();
   setupEvents();
+  initSignaturePad();
+  populateHosts();
+  updatePolicyLink();
+  renderGuestLog();
   await bootstrapState();
-}
-
-function getPersonalEmployeeId() {
-  if (typeof window === 'undefined') return null;
-  const params = new URLSearchParams(window.location.search);
-  return (
-    params.get('employee') ||
-    params.get('employeeId') ||
-    params.get('employee_id') ||
-    params.get('id') ||
-    null
-  );
-}
-
-function applyPersonalLayout() {
-  if (!isPersonalMode) return;
-  elements.shell?.classList.add('personal-mode');
-  if (elements.counter) elements.counter.textContent = 'Personligt check-in';
-  if (elements.search) {
-    elements.search.value = '';
-    elements.search.setAttribute('disabled', 'true');
-  }
-  if (elements.eyebrow) elements.eyebrow.textContent = 'Personligt kort';
-  if (elements.heading) elements.heading.textContent = 'Velkommen';
-  if (elements.subline)
-    elements.subline.textContent = 'Dette link er kun til dig – opdater din status her.';
+  checkDailyReset();
 }
 
 function setupEvents() {
-  elements.search?.addEventListener('input', renderEmployees);
+  elements.form?.addEventListener('submit', handleGuestSubmit);
+  elements.signatureClear?.addEventListener('click', resetSignaturePad);
   elements.syncButton?.addEventListener('click', () => refreshFromBackend(true));
 }
 
 async function bootstrapState() {
   if (!dataAdapter) {
     setStatus('Ingen backend tilgængelig. Viser kun lokale data.', true);
-    renderEmployees();
     return;
   }
 
@@ -110,13 +88,11 @@ async function bootstrapState() {
     adapterReady = dataAdapter.isReady ? dataAdapter.isReady() : true;
   } catch (error) {
     setStatus(`Kunne ikke logge ind: ${error.message}`, true);
-    renderEmployees();
     return;
   }
 
   await refreshFromBackend(true);
   startRealtime();
-  checkDailyReset();
 }
 
 function startRealtime() {
@@ -136,7 +112,9 @@ function startRealtime() {
       }
       state = normalized;
       lastSyncedAt = state.updatedAt;
-      renderEmployees();
+      renderGuestLog();
+      populateHosts();
+      updatePolicyLink();
       setStatus(`Synkroniseret kl. ${formatClock(new Date())}`);
       checkDailyReset();
     });
@@ -160,7 +138,9 @@ async function refreshFromBackend(showNotice = false) {
     if (remoteState) {
       state = ensureStateDefaults(remoteState);
       lastSyncedAt = state.updatedAt;
-      renderEmployees();
+      renderGuestLog();
+      populateHosts();
+      updatePolicyLink();
       if (showNotice) setStatus(`Opdaterede fra backend kl. ${formatClock(new Date())}`);
       checkDailyReset();
       return;
@@ -171,167 +151,197 @@ async function refreshFromBackend(showNotice = false) {
   }
 }
 
-function renderEmployees() {
-  if (!elements.list) return;
-  const query = isPersonalMode ? '' : elements.search?.value?.toLowerCase()?.trim() || '';
-  let employees = state.employees.slice().sort((a, b) =>
-    `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'da', {
-      sensitivity: 'base',
-    })
-  );
+function handleGuestSubmit(event) {
+  event.preventDefault();
+  const form = event.target;
 
-  if (isPersonalMode) {
-    const personal = findPersonalEmployee(employees);
-    employees = personal ? [personal] : [];
-    if (personal) {
-      updatePersonalHeader(personal);
-    }
-    elements.counter.textContent = employees.length ? 'Personligt medarbejderkort' : 'Ikke fundet endnu';
-  } else {
-    employees = employees.filter((emp) => {
-      if (!query) return true;
-      const haystack = `${emp.firstName} ${emp.lastName} ${emp.department}`.toLowerCase();
-      return haystack.includes(query);
-    });
-    elements.counter.textContent = `${employees.length} medarbejdere`;
-  }
+  const guest = {
+    id: window.crypto?.randomUUID ? window.crypto.randomUUID() : `guest-${Date.now()}`,
+    name: form['vr-guest-name'].value.trim(),
+    company: form['vr-guest-company'].value.trim(),
+    hostId: form['vr-guest-host'].value,
+    purpose: form['vr-guest-purpose'].value.trim(),
+    signature: form['vr-guest-signature-data']?.value || '',
+    timestamp: new Date().toISOString(),
+  };
 
-  if (!employees.length) {
-    const emptyMessage = isPersonalMode
-      ? 'Linket matcher ikke en medarbejder endnu.'
-      : 'Ingen medarbejdere matchede din søgning.';
-    elements.list.innerHTML = `<p class="qc-empty">${emptyMessage}</p>`;
+  if (!guest.name || !guest.hostId) {
+    setStatus('Udfyld venligst navn og værtsfelt.', true);
     return;
   }
 
-  elements.list.innerHTML = '';
-  employees.forEach((employee) => {
-    const card = document.createElement('article');
-    card.className = 'qc-card';
-    card.dataset.id = employee.id;
-    if (isPersonalMode) {
-      card.classList.add('qc-card-personal');
-    }
-
-    const header = document.createElement('header');
-    const title = document.createElement('div');
-    const name = document.createElement('h3');
-    name.textContent = `${employee.firstName} ${employee.lastName}`;
-    const meta = document.createElement('p');
-    meta.className = 'meta';
-    meta.textContent = [employee.department, employee.role].filter(Boolean).join(' · ');
-    title.append(name, meta);
-
-    const pill = document.createElement('span');
-    pill.className = 'qc-status-pill';
-    const status = employee.status || 'unknown';
-    pill.dataset.status = status;
-    pill.textContent = STATUS_LABELS[status] || STATUS_LABELS.unknown;
-
-    header.append(title, pill);
-
-    const statusText = document.createElement('p');
-    statusText.className = 'status-text';
-    statusText.textContent = formatStatusText(employee);
-
-    const actions = document.createElement('div');
-    actions.className = 'qc-actions';
-
-    const onsite = document.createElement('button');
-    onsite.className = 'primary';
-    onsite.dataset.action = 'checkin';
-    onsite.textContent = 'Tjek ind';
-
-    const checkout = document.createElement('button');
-    checkout.className = 'ghost';
-    checkout.dataset.action = 'checkout';
-    checkout.textContent = 'Gå hjem for i dag';
-
-    const remote = document.createElement('button');
-    remote.className = 'ghost';
-    remote.dataset.action = 'remote';
-    remote.textContent = 'Arbejd hjemme';
-
-    actions.append(onsite, checkout, remote);
-
-    actions.addEventListener('click', (event) => {
-      const action = event.target.dataset.action;
-      if (!action) return;
-      handleAction(employee.id, action);
-    });
-
-    card.append(header, statusText, actions);
-    elements.list.appendChild(card);
-  });
-}
-
-function findPersonalEmployee(employees = []) {
-  if (!isPersonalMode || !personalEmployeeId) return null;
-  const needle = personalEmployeeId.toLowerCase();
-
-  return (
-    employees.find((emp) => (emp.id || '').toLowerCase() === needle) ||
-    employees.find(
-      (emp) => `${emp.firstName} ${emp.lastName}`.toLowerCase().trim() === needle
-    ) ||
-    employees.find(
-      (emp) => `${emp.firstName}-${emp.lastName}`.toLowerCase().replace(/\s+/g, '-') === needle
-    )
-  );
-}
-
-function updatePersonalHeader(employee) {
-  if (!isPersonalMode || !employee) return;
-  if (elements.heading) elements.heading.textContent = `${employee.firstName} ${employee.lastName}`;
-  if (elements.subline)
-    elements.subline.textContent = 'Skjult quicklink til at opdatere din status med ét klik.';
-  if (elements.eyebrow) elements.eyebrow.textContent = 'Personligt check-in';
-}
-
-function handleAction(employeeId, action) {
-  if (action === 'checkin') {
-    updateEmployeeStatus(employeeId, 'onsite', 'Tjekket ind via hurtig side');
-  }
-  if (action === 'checkout') {
-    updateEmployeeStatus(employeeId, 'left', 'Gået hjem for i dag');
-  }
-  if (action === 'remote') {
-    updateEmployeeStatus(employeeId, 'remote', 'Markeret som hjemmearbejde via QR');
-  }
-}
-
-function updateEmployeeStatus(id, status, note = '') {
-  const employee = state.employees.find((emp) => emp.id === id);
-  if (!employee) return;
-
-  employee.status = status;
-  employee.lastStatusChange = new Date().toISOString();
-  employee.statusNotes = note || employee.statusNotes || '';
-  if (status !== 'away') {
-    employee.absence = undefined;
+  if (!form['vr-guest-nda']?.checked) {
+    setStatus('Gæsten skal acceptere NDA.', true);
+    return;
   }
 
-  logEvent({ type: 'status-change', employeeId: employee.id, status, note });
-  renderEmployees();
+  state.guests.unshift(guest);
+  logEvent({ type: 'guest-checkin', guest });
+  notifyHost(guest);
+  renderGuestLog();
+  form.reset();
+  resetSignaturePad();
+  setStatus('Gæst registreret.');
   commitState();
 }
 
-function formatStatusText(employee) {
-  const timestamp = employee.lastStatusChange ? new Date(employee.lastStatusChange) : null;
-  const timeString = timestamp ? timestamp.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }) : '';
+function renderGuestLog() {
+  if (!elements.log) return;
+  const todayGuests = state.guests.filter((guest) => isToday(guest.timestamp));
+  if (elements.logCount) elements.logCount.textContent = todayGuests.length;
 
-  switch (employee.status) {
-    case 'onsite':
-      return `På kontoret siden ${timeString}`;
-    case 'remote':
-      return employee.statusNotes || `Hjemmearbejde (${timeString})`;
-    case 'left':
-      return employee.statusNotes || `Gået hjem for i dag (${timeString})`;
-    case 'away':
-      return employee.statusNotes || 'Registreret fravær';
-    default:
-      return 'Ingen status registreret endnu.';
+  elements.log.innerHTML = '';
+  if (!todayGuests.length) {
+    const empty = document.createElement('p');
+    empty.className = 'vr-empty';
+    empty.textContent = 'Ingen registreringer endnu i dag.';
+    elements.log.appendChild(empty);
+    return;
   }
+
+  todayGuests.slice(0, 12).forEach((guest) => {
+    const host = state.employees.find((emp) => emp.id === guest.hostId);
+    const entry = document.createElement('div');
+    entry.className = 'entry';
+    const time = new Date(guest.timestamp).toLocaleTimeString('da-DK', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    entry.innerHTML = `
+      <strong>${escapeHtml(guest.name)}${guest.company ? ` · ${escapeHtml(guest.company)}` : ''}</strong>
+      <span>${host ? `${escapeHtml(host.firstName)} ${escapeHtml(host.lastName)}` : 'Ukendt vært'}</span>
+      <small>${time}${guest.purpose ? ` · ${escapeHtml(guest.purpose)}` : ''}</small>
+    `;
+    elements.log.appendChild(entry);
+  });
+}
+
+function populateHosts() {
+  const select = elements.host;
+  if (!select) return;
+  select.innerHTML = '';
+
+  const employees = state.employees.slice().sort((a, b) =>
+    `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'da', { sensitivity: 'base' })
+  );
+
+  employees.forEach((employee) => {
+    if (employee.status === 'away') return;
+    const option = document.createElement('option');
+    option.value = employee.id;
+    option.textContent = `${employee.firstName} ${employee.lastName} · ${employee.department}`;
+    select.appendChild(option);
+  });
+}
+
+function initSignaturePad() {
+  if (!elements.signature) return;
+
+  signaturePadState.canvas = elements.signature;
+  signaturePadState.ctx = signaturePadState.canvas.getContext('2d');
+
+  const canvas = signaturePadState.canvas;
+  canvas.addEventListener('pointerdown', startSignatureStroke);
+  canvas.addEventListener('pointermove', drawSignatureStroke);
+  canvas.addEventListener('pointerup', endSignatureStroke);
+  canvas.addEventListener('pointerleave', endSignatureStroke);
+
+  window.addEventListener('resize', resizeSignatureCanvas);
+  resizeSignatureCanvas();
+  resetSignaturePad();
+}
+
+function startSignatureStroke(event) {
+  if (!signaturePadState.canvas || !signaturePadState.ctx) return;
+  event.preventDefault();
+  const { x, y } = getCanvasCoordinates(event);
+  signaturePadState.isDrawing = true;
+  signaturePadState.ctx.beginPath();
+  signaturePadState.ctx.moveTo(x, y);
+}
+
+function drawSignatureStroke(event) {
+  if (!signaturePadState.isDrawing || !signaturePadState.ctx) return;
+  event.preventDefault();
+  const { x, y } = getCanvasCoordinates(event);
+  signaturePadState.ctx.lineTo(x, y);
+  signaturePadState.ctx.stroke();
+  signaturePadState.hasSignature = true;
+}
+
+function endSignatureStroke(event) {
+  if (!signaturePadState.isDrawing) return;
+  event.preventDefault();
+  signaturePadState.isDrawing = false;
+  updateSignatureValue();
+}
+
+function getCanvasCoordinates(event) {
+  const rect = signaturePadState.canvas.getBoundingClientRect();
+  const point = event.changedTouches ? event.changedTouches[0] : event;
+  return {
+    x: point.clientX - rect.left,
+    y: point.clientY - rect.top,
+  };
+}
+
+function resizeSignatureCanvas() {
+  if (!signaturePadState.canvas || !signaturePadState.ctx) return;
+
+  const parentWidth = signaturePadState.canvas.parentElement?.clientWidth || 0;
+  signaturePadState.canvas.width = parentWidth || 440;
+  signaturePadState.canvas.height = 140;
+  signaturePadState.ctx.lineWidth = 2.5;
+  signaturePadState.ctx.lineCap = 'round';
+  signaturePadState.ctx.lineJoin = 'round';
+  signaturePadState.ctx.strokeStyle = '#e2e8f0';
+
+  if (signaturePadState.hasSignature) {
+    updateSignatureValue();
+  }
+}
+
+function updateSignatureValue() {
+  if (!elements.signatureData || !signaturePadState.canvas) return;
+  elements.signatureData.value = signaturePadState.hasSignature
+    ? signaturePadState.canvas.toDataURL('image/png')
+    : '';
+  updateSignatureStatus();
+}
+
+function updateSignatureStatus() {
+  if (!elements.signatureStatus) return;
+  elements.signatureStatus.textContent = signaturePadState.hasSignature
+    ? 'Underskrift registreret.'
+    : 'Ingen underskrift endnu.';
+}
+
+function resetSignaturePad() {
+  if (!signaturePadState.canvas || !signaturePadState.ctx) return;
+  signaturePadState.ctx.clearRect(
+    0,
+    0,
+    signaturePadState.canvas.width,
+    signaturePadState.canvas.height
+  );
+  signaturePadState.hasSignature = false;
+  signaturePadState.isDrawing = false;
+  updateSignatureValue();
+}
+
+function updatePolicyLink() {
+  if (!elements.ndaLink) return;
+  const link = elements.ndaLink;
+  link.href = state.policyLinks?.nda || '#';
+  link.textContent = state.policyLinks?.nda ? 'SUBRAs NDA' : 'NDA-link mangler';
+}
+
+function notifyHost(guest) {
+  const host = state.employees.find((emp) => emp.id === guest.hostId);
+  const message = host
+    ? `SMS til ${host.firstName} ${host.lastName}: ${guest.name} er ankommet og venter i receptionen.`
+    : `Gæst ${guest.name} registreret.`;
+  setStatus(message);
 }
 
 function logEvent(entry) {
@@ -367,7 +377,8 @@ function checkDailyReset(now = new Date()) {
   const resetPerformed = performDailyReset(now);
   scheduleNextDailyReset(now);
   if (resetPerformed) {
-    renderEmployees();
+    renderGuestLog();
+    populateHosts();
     void commitState();
   }
 }
@@ -507,6 +518,26 @@ function normalizeSlides(slides) {
       updatedAt: slide.updatedAt || null,
     }))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+function isToday(timestamp) {
+  if (!timestamp) return false;
+  const date = new Date(timestamp);
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+}
+
+function escapeHtml(value = '') {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function formatClock(date) {

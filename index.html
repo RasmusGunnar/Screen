@@ -13,6 +13,12 @@
   <div id="app-container">
     <section id="screensaver" class="screensaver">
       <p class="screensaver-hint">Tryk for at starte registreringen</p>
+      <div class="landing-bar">
+        <div class="landing-inner">
+          <a class="landing-link" href="quick-checkin.html">Employee sign in</a>
+          <a class="landing-link ghost" href="visitor-registration.html">Visitor registration</a>
+        </div>
+      </div>
     </section>
 
     <template id="screensaver-slide-template">
@@ -63,71 +69,22 @@
           <span class="summary-label">Gæster registreret i dag</span>
           <span class="summary-value" data-summary="guests">0</span>
         </button>
+        <button type="button" class="summary-card summary-warning" data-summary-target="unknown">
+          <span class="summary-label">Mangler status i dag</span>
+          <span class="summary-value" data-summary="unknown">0</span>
+        </button>
       </section>
 
-      <section class="interaction-panel">
-        <div class="guest-card">
-          <h2>Registrering af gæster</h2>
-          <form id="guest-form">
-            <div class="form-group">
-              <label for="guest-name">Navn</label>
-              <input id="guest-name" required placeholder="Gæstens navn" />
-            </div>
-            <div class="form-group">
-              <label for="guest-company">Virksomhed</label>
-              <input id="guest-company" placeholder="Virksomhed (valgfrit)" />
-            </div>
-            <div class="form-group">
-              <label for="guest-host">Besøger</label>
-              <select id="guest-host" required></select>
-            </div>
-          <div class="form-group">
-            <label for="guest-purpose">Formål</label>
-            <input id="guest-purpose" placeholder="Møde, interview, leverance..." />
+      <section class="missing-status" id="missing-status">
+        <div class="missing-status-header">
+          <div>
+            <p class="eyebrow">Overblik</p>
+            <h2>Ingen status valgt i dag</h2>
+            <p class="subline">Synliggør medarbejdere der ikke har tjekket ind eller valgt en status.</p>
           </div>
-          <fieldset class="form-group policy-checkboxes">
-            <legend>Politikker</legend>
-            <label class="checkbox">
-              <input type="checkbox" id="guest-nda" required />
-              Jeg har læst og accepterer
-              <a id="guest-nda-link" class="policy-link" href="#" target="_blank" rel="noopener">SUBRAs NDA</a>.
-            </label>
-            <div class="signature-block">
-              <div class="signature-header">
-                <p>Underskriv for at bekræfte retningslinjerne for IT- og datasikkerhed.</p>
-                <small>Brug musen eller touch for at skrive din underskrift.</small>
-              </div>
-              <div class="signature-pad">
-                <canvas id="guest-signature" aria-label="Underskrift"></canvas>
-                <div class="signature-toolbar">
-                  <span id="signature-status" class="signature-status">Ingen underskrift endnu.</span>
-                  <button type="button" class="ghost" id="signature-clear">Ryd</button>
-                </div>
-              </div>
-              <input type="hidden" name="guest-signature-data" id="guest-signature-data" />
-            </div>
-          </fieldset>
-          <button type="submit" class="primary">Registrer gæst</button>
-          <p class="form-hint">Den valgte medarbejder får en notifikation (simuleret).</p>
-        </form>
-          <div class="guest-log" id="guest-log"></div>
+          <div class="missing-count" id="missing-count">0 medarbejdere</div>
         </div>
-        <div class="self-service-card">
-          <h2>Hurtig selvbetjening</h2>
-          <p>Scan QR-koden for at åbne medarbejdersiden på din egen telefon.</p>
-          <div class="qr-grid single">
-            <figure>
-              <div id="employee-qr" class="qr-canvas" role="img" aria-label="QR-kode for medarbejdere"></div>
-              <figcaption>
-                Medarbejder check-ind/out
-                <small id="employee-qr-link" class="qr-link"></small>
-              </figcaption>
-            </figure>
-          </div>
-          <p class="qr-hint">
-            QR-koden opdateres automatisk når du ændrer linket i adminportalen eller synkroniserer via Firebase.
-          </p>
-        </div>
+        <div class="missing-status-list" id="missing-status-list"></div>
       </section>
 
       <section class="departments" id="departments"></section>
