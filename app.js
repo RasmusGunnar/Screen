@@ -86,6 +86,12 @@ let activeModalEmployee = null;
 let screensaverInterval;
 let pendingSlideUploadId = null;
 let isSyncing = false;
+const signaturePadState = {
+  isDrawing: false,
+  hasSignature: false,
+  ctx: null,
+  canvas: null,
+};
 
 const elements = {
   screensaver: document.getElementById('screensaver'),
@@ -99,6 +105,10 @@ const elements = {
   guestHost: document.getElementById('guest-host'),
   guestLog: document.getElementById('guest-log'),
   guestNdaLink: document.getElementById('guest-nda-link'),
+  guestSignature: document.getElementById('guest-signature'),
+  signatureStatus: document.getElementById('signature-status'),
+  signatureClear: document.getElementById('signature-clear'),
+  guestSignatureData: document.getElementById('guest-signature-data'),
   statusModal: document.getElementById('status-modal'),
   modalClose: document.getElementById('modal-close'),
   modalEmployee: document.getElementById('modal-employee'),
@@ -145,6 +155,7 @@ if (typeof window !== 'undefined') {
 
 async function init() {
   attachEvents();
+  initSignaturePad();
   renderSlides();
   renderAll();
   persistLocalSnapshot(state);
@@ -430,6 +441,8 @@ function attachEvents() {
   document.addEventListener('mousemove', resetInactivityTimer, { passive: true });
 
   elements.search?.addEventListener('input', (event) => renderDepartments(event.target.value));
+
+  elements.signatureClear?.addEventListener('click', resetSignaturePad);
 
   elements.summaryCards?.forEach((card) =>
     card.addEventListener('click', () => openSummaryModal(card.dataset.summaryTarget))
@@ -927,6 +940,101 @@ function populateGuestHost() {
   });
 }
 
+function initSignaturePad() {
+  if (!elements.guestSignature) return;
+
+  signaturePadState.canvas = elements.guestSignature;
+  signaturePadState.ctx = signaturePadState.canvas.getContext('2d');
+
+  const canvas = signaturePadState.canvas;
+  canvas.addEventListener('pointerdown', startSignatureStroke);
+  canvas.addEventListener('pointermove', drawSignatureStroke);
+  canvas.addEventListener('pointerup', endSignatureStroke);
+  canvas.addEventListener('pointerleave', endSignatureStroke);
+
+  window.addEventListener('resize', resizeSignatureCanvas);
+  resizeSignatureCanvas();
+  resetSignaturePad();
+}
+
+function resizeSignatureCanvas() {
+  if (!signaturePadState.canvas || !signaturePadState.ctx) return;
+
+  const parentWidth = signaturePadState.canvas.parentElement?.clientWidth || 0;
+  signaturePadState.canvas.width = parentWidth || 440;
+  signaturePadState.canvas.height = 140;
+  signaturePadState.ctx.lineWidth = 2.5;
+  signaturePadState.ctx.lineCap = 'round';
+  signaturePadState.ctx.lineJoin = 'round';
+  signaturePadState.ctx.strokeStyle = '#1b2329';
+
+  if (signaturePadState.hasSignature) {
+    updateSignatureValue();
+  }
+}
+
+function startSignatureStroke(event) {
+  if (!signaturePadState.canvas || !signaturePadState.ctx) return;
+  event.preventDefault();
+  const { x, y } = getCanvasCoordinates(event);
+  signaturePadState.isDrawing = true;
+  signaturePadState.ctx.beginPath();
+  signaturePadState.ctx.moveTo(x, y);
+}
+
+function drawSignatureStroke(event) {
+  if (!signaturePadState.isDrawing || !signaturePadState.ctx) return;
+  event.preventDefault();
+  const { x, y } = getCanvasCoordinates(event);
+  signaturePadState.ctx.lineTo(x, y);
+  signaturePadState.ctx.stroke();
+  signaturePadState.hasSignature = true;
+}
+
+function endSignatureStroke(event) {
+  if (!signaturePadState.isDrawing) return;
+  event.preventDefault();
+  signaturePadState.isDrawing = false;
+  updateSignatureValue();
+}
+
+function getCanvasCoordinates(event) {
+  const rect = signaturePadState.canvas.getBoundingClientRect();
+  const point = event.changedTouches ? event.changedTouches[0] : event;
+  return {
+    x: point.clientX - rect.left,
+    y: point.clientY - rect.top,
+  };
+}
+
+function updateSignatureValue() {
+  if (!elements.guestSignatureData || !signaturePadState.canvas) return;
+  elements.guestSignatureData.value = signaturePadState.hasSignature
+    ? signaturePadState.canvas.toDataURL('image/png')
+    : '';
+  updateSignatureStatus();
+}
+
+function updateSignatureStatus() {
+  if (!elements.signatureStatus) return;
+  elements.signatureStatus.textContent = signaturePadState.hasSignature
+    ? 'Underskrift registreret.'
+    : 'Ingen underskrift endnu.';
+}
+
+function resetSignaturePad() {
+  if (!signaturePadState.canvas || !signaturePadState.ctx) return;
+  signaturePadState.ctx.clearRect(
+    0,
+    0,
+    signaturePadState.canvas.width,
+    signaturePadState.canvas.height
+  );
+  signaturePadState.hasSignature = false;
+  signaturePadState.isDrawing = false;
+  updateSignatureValue();
+}
+
 function handleGuestSubmit(event) {
   event.preventDefault();
   const form = event.target;
@@ -936,12 +1044,17 @@ function handleGuestSubmit(event) {
     company: form['guest-company'].value.trim(),
     hostId: form['guest-host'].value,
     purpose: form['guest-purpose'].value.trim(),
+    signature: form['guest-signature-data']?.value || '',
     timestamp: new Date().toISOString(),
   };
 
   if (!guest.name || !guest.hostId) return;
-  if (!form['guest-nda']?.checked || !form['guest-it']?.checked) {
+  if (!form['guest-nda']?.checked) {
     alert('Gæster skal acceptere politikkerne for at fortsætte.');
+    return;
+  }
+  if (!signaturePadState.hasSignature) {
+    alert('Underskriv venligst IT- og datasikkerhed for at fortsætte.');
     return;
   }
 
@@ -949,6 +1062,7 @@ function handleGuestSubmit(event) {
   logEvent({ type: 'guest-checkin', guest });
   notifyHost(guest);
   form.reset();
+  resetSignaturePad();
   renderAll();
   commitState();
 }
