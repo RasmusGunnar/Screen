@@ -10,6 +10,7 @@ let lastSyncedAt = null;
 let syncTimer = null;
 const POLL_INTERVAL = 15000;
 const LOCAL_SNAPSHOT_KEY = 'subra-kiosk-snapshot';
+let dailyResetTimer = null;
 
 applyLocalConfig(window.SUBRA_LOCAL_CONFIG || null);
 
@@ -18,6 +19,7 @@ const seedEmployees = DEFAULTS.employees || [];
 const defaultSlides = DEFAULTS.slides || [];
 const DEFAULT_QR_LINKS = DEFAULTS.qrLinks || { employee: '', guest: '' };
 const DEFAULT_POLICY_LINKS = DEFAULTS.policyLinks || { nda: '' };
+const DAILY_RESET_HOUR = 12;
 
 const SLIDE_THEMES = [
   { value: 'fjord', label: 'Fjord · kølig blå' },
@@ -32,6 +34,7 @@ const SUMMARY_LABELS = {
   remote: 'Arbejder hjemmefra',
   away: 'Registreret fravær',
   guests: 'Dagens gæster',
+  unknown: 'Mangler status i dag',
 };
 
 const STATUS_LABELS = {
@@ -55,6 +58,7 @@ const SUMMARY_EMPTY_MESSAGES = {
   remote: 'Ingen medarbejdere er registreret som hjemmearbejde.',
   away: 'Der er ikke registreret fravær i dag.',
   guests: 'Ingen gæster er registreret endnu i dag.',
+  unknown: 'Alle medarbejdere har registreret en status i dag.',
 };
 
 function applyLocalConfig(config) {
@@ -146,6 +150,8 @@ const elements = {
   summaryClose: document.getElementById('summary-close'),
   summaryTitle: document.getElementById('summary-title'),
   summaryList: document.getElementById('summary-list'),
+  missingList: document.getElementById('missing-status-list'),
+  missingCount: document.getElementById('missing-count'),
 };
 
 init();
@@ -160,6 +166,7 @@ async function init() {
   renderAll();
   persistLocalSnapshot(state);
   await bootstrapRemoteState();
+  checkDailyReset();
   restartScreensaverCycle();
   tickClock();
   setInterval(tickClock, 1000);
@@ -213,6 +220,7 @@ function ensureStateDefaults(data = {}) {
     policyLinks,
     settings,
     updatedAt: data.updatedAt || null,
+    lastResetAt: data.lastResetAt || null,
   };
 }
 
@@ -272,6 +280,82 @@ function persistLocalSnapshot(data) {
   } catch (error) {
     console.warn('Kunne ikke gemme lokal snapshot', error);
   }
+}
+
+function checkDailyReset(now = new Date()) {
+  const resetPerformed = performDailyReset(now);
+  if (resetPerformed) {
+    renderAll();
+    commitState();
+  }
+  scheduleNextDailyReset(now);
+}
+
+function scheduleNextDailyReset(now = new Date()) {
+  if (dailyResetTimer) {
+    window.clearTimeout(dailyResetTimer);
+    dailyResetTimer = null;
+  }
+
+  const nextReset = new Date(now);
+  nextReset.setHours(DAILY_RESET_HOUR, 0, 0, 0);
+  if (nextReset <= now) {
+    nextReset.setDate(nextReset.getDate() + 1);
+  }
+
+  const delay = Math.max(nextReset.getTime() - now.getTime(), 1000);
+  dailyResetTimer = window.setTimeout(() => checkDailyReset(), delay);
+}
+
+function performDailyReset(now = new Date()) {
+  const lastReset = state.lastResetAt ? new Date(state.lastResetAt) : null;
+  const threshold = calculateResetThreshold(now);
+
+  if (lastReset && lastReset >= threshold) {
+    return false;
+  }
+
+  let changed = false;
+  const timestamp = now.toISOString();
+
+  state.employees = state.employees.map((employee) => {
+    if (employee.status === 'away') return employee;
+    if (!employee.status || employee.status === 'unknown') {
+      return {
+        ...employee,
+        status: 'unknown',
+        statusNotes: '',
+        absence: undefined,
+        lastStatusChange: timestamp,
+      };
+    }
+    changed = true;
+    return {
+      ...employee,
+      status: 'unknown',
+      statusNotes: '',
+      absence: undefined,
+      lastStatusChange: timestamp,
+    };
+  });
+
+  if (changed || !state.lastResetAt) {
+    state.lastResetAt = timestamp;
+    logEvent({ type: 'daily-reset', timestamp });
+  }
+
+  return changed;
+}
+
+function calculateResetThreshold(reference = new Date()) {
+  const todayNoon = new Date(reference);
+  todayNoon.setHours(DAILY_RESET_HOUR, 0, 0, 0);
+  if (reference >= todayNoon) {
+    return todayNoon;
+  }
+  const yesterdayNoon = new Date(todayNoon);
+  yesterdayNoon.setDate(yesterdayNoon.getDate() - 1);
+  return yesterdayNoon;
 }
 
 function cloneState(source = state) {
@@ -348,6 +432,7 @@ function startSyncLoop() {
         renderAll();
         updateQrCodes();
         updateGuestPolicyLink();
+        checkDailyReset();
       });
     } catch (error) {
       appendSyncOutput(`Realtime-opdatering fejlede: ${error.message}`);
@@ -401,6 +486,7 @@ async function fetchRemoteState(force = false) {
     renderAll();
     updateQrCodes();
     updateGuestPolicyLink();
+    checkDailyReset();
   } catch (error) {
     appendSyncOutput(`Kunne ikke hente data fra backend: ${error.message}`);
   }
@@ -554,6 +640,7 @@ function renderAll() {
   renderScreensaverAdmin();
   updateQrCodes();
   updateGuestPolicyLink();
+  renderMissingStatuses();
   if (!elements.summaryModal?.classList.contains('hidden')) {
     renderSummaryDetails(elements.summaryModal.dataset.summaryType);
   }
@@ -648,6 +735,9 @@ function createEmployeeCard(employee) {
   card.dataset.id = employee.id;
   const status = employee.status || 'unknown';
   card.dataset.status = status;
+  if (isEmployeeMissingStatus(employee)) {
+    card.classList.add('missing-status-card');
+  }
 
   const indicator = document.createElement('span');
   indicator.className = 'status-indicator';
@@ -714,7 +804,7 @@ function formatStatusText(employee) {
       }
       return employee.statusNotes || 'Fravær registreret';
     case 'unknown':
-      return 'Ingen status registreret i dag.';
+      return 'Ingen status valgt i dag. Tjek ind eller angiv fravær.';
     default:
       return 'Ingen status registreret i dag.';
   }
@@ -825,12 +915,14 @@ function renderSummary() {
     remote: 0,
     away: 0,
     guests: state.guests.filter((guest) => isToday(guest.timestamp)).length,
+    unknown: 0,
   };
 
   state.employees.forEach((employee) => {
     if (employee.status === 'onsite') counters.onsite += 1;
     if (employee.status === 'remote') counters.remote += 1;
     if (employee.status === 'away') counters.away += 1;
+    if (isEmployeeMissingStatus(employee)) counters.unknown += 1;
   });
 
   elements.summaryValues.forEach((node) => {
@@ -897,11 +989,12 @@ function renderSummaryDetails(type) {
     return;
   }
 
-  const employees = state.employees
-    .filter((employee) => employee.status === type)
-    .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'da', {
-      sensitivity: 'base',
-    }));
+  const employees = (type === 'unknown'
+    ? getMissingEmployees()
+    : state.employees.filter((employee) => employee.status === type)
+  ).sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'da', {
+    sensitivity: 'base',
+  }));
 
   if (!employees.length) {
     elements.summaryList.innerHTML = `<p class="summary-empty">${
@@ -920,6 +1013,53 @@ function renderSummaryDetails(type) {
     `;
     elements.summaryList.appendChild(entry);
   });
+}
+
+function renderMissingStatuses() {
+  if (!elements.missingList) return;
+
+  const missing = getMissingEmployees();
+  if (elements.missingCount) {
+    elements.missingCount.textContent = `${missing.length} medarbejdere`;
+  }
+
+  elements.missingList.innerHTML = '';
+  if (!missing.length) {
+    const empty = document.createElement('p');
+    empty.className = 'summary-empty';
+    empty.textContent = SUMMARY_EMPTY_MESSAGES.unknown;
+    elements.missingList.appendChild(empty);
+    return;
+  }
+
+  missing
+    .slice()
+    .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'da', {
+      sensitivity: 'base',
+    }))
+    .forEach((employee) => {
+      const card = document.createElement('article');
+      card.className = 'missing-entry';
+      card.innerHTML = `
+        <div>
+          <p class="eyebrow">${escapeHtml(employee.department || 'Ukendt afdeling')}</p>
+          <strong>${escapeHtml(employee.firstName)} ${escapeHtml(employee.lastName)}</strong>
+          <small>${employee.role ? escapeHtml(employee.role) : 'Ingen rolle angivet'}</small>
+        </div>
+        <span class="missing-pill">Ingen status i dag</span>
+      `;
+      elements.missingList.appendChild(card);
+    });
+}
+
+function getMissingEmployees() {
+  return state.employees.filter(isEmployeeMissingStatus);
+}
+
+function isEmployeeMissingStatus(employee) {
+  if (!employee) return false;
+  if (employee.status === 'away') return false;
+  return !employee.status || employee.status === 'unknown';
 }
 
 function populateGuestHost() {

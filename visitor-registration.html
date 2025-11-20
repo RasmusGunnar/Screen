@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="da">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SUBRA · Visitor registration</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="visitor-registration.css" />
+  </head>
+  <body>
+    <main class="vr-shell">
+      <header class="vr-header">
+        <div class="vr-brand">
+          <img src="assets/LOGO_SUBRA_sort_transp-web.png" alt="SUBRA" />
+          <div>
+            <p class="eyebrow">Velkommen</p>
+            <h1>Visitor registration</h1>
+            <p class="subline">Log gæster og informér værter på få sekunder.</p>
+          </div>
+        </div>
+        <div class="vr-status">
+          <p id="vr-status-text">Forbinder til backend...</p>
+          <button id="vr-sync" type="button">Synkroniser nu</button>
+        </div>
+      </header>
+
+      <section class="vr-grid">
+        <article class="vr-card">
+          <h2>Registrer ny gæst</h2>
+          <form id="vr-guest-form">
+            <label class="vr-field">
+              <span>Navn *</span>
+              <input id="vr-guest-name" required placeholder="Fornavn Efternavn" />
+            </label>
+            <label class="vr-field">
+              <span>Virksomhed</span>
+              <input id="vr-guest-company" placeholder="Firma (valgfrit)" />
+            </label>
+            <label class="vr-field">
+              <span>Besøger *</span>
+              <select id="vr-guest-host" required></select>
+            </label>
+            <label class="vr-field">
+              <span>Formål</span>
+              <input id="vr-guest-purpose" placeholder="Møde, interview, levering..." />
+            </label>
+
+            <fieldset class="vr-policy">
+              <legend>Politikker</legend>
+              <label class="checkbox">
+                <input type="checkbox" id="vr-guest-nda" required />
+                Jeg har læst og accepterer
+                <a id="vr-guest-nda-link" class="policy-link" href="#" target="_blank" rel="noopener">SUBRAs NDA</a>.
+              </label>
+              <div class="signature-block">
+                <div class="signature-header">
+                  <p>Underskriv for at bekræfte retningslinjerne for IT- og datasikkerhed.</p>
+                  <small>Brug musen eller touch for at skrive din underskrift.</small>
+                </div>
+                <div class="signature-pad">
+                  <canvas id="vr-guest-signature" aria-label="Underskrift"></canvas>
+                  <div class="signature-toolbar">
+                    <span id="vr-signature-status" class="signature-status">Ingen underskrift endnu.</span>
+                    <button type="button" class="ghost" id="vr-signature-clear">Ryd</button>
+                  </div>
+                </div>
+                <input type="hidden" name="guest-signature-data" id="vr-guest-signature-data" />
+              </div>
+            </fieldset>
+
+            <button type="submit" class="primary">Registrer gæst</button>
+            <p class="form-hint">Værten får en notifikation (simuleret).</p>
+          </form>
+        </article>
+
+        <article class="vr-card vr-log">
+          <div class="vr-log-header">
+            <div>
+              <p class="eyebrow">Dagens overblik</p>
+              <h2>Dagens registreringer</h2>
+            </div>
+            <span class="vr-log-count" id="vr-log-count">0</span>
+          </div>
+          <div id="vr-guest-log" class="vr-guest-log"></div>
+        </article>
+      </section>
+
+      <footer class="vr-footer">
+        <p>SUBRA · Visitor registration · Data synkroniseres direkte til backend.</p>
+      </footer>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+    <script src="firebase-config.js"></script>
+    <script src="local-config.js"></script>
+    <script src="defaults.js"></script>
+    <script src="local-backend-adapter.js"></script>
+    <script src="firebase-adapter.js"></script>
+    <script src="visitor-registration.js"></script>
+  </body>
+</html>
