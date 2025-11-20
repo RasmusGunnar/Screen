@@ -641,22 +641,11 @@ function renderSlides() {
         <div class="overlay overlay-top-left">
           <img src="assets/LOGO_SUBRA_sort_transp-web.png" alt="SUBRA" class="logo" />
         </div>
-        <div class="overlay overlay-bottom-center">
-          <p class="welcome-tagline"></p>
-          <p class="welcome-instruction"></p>
-        </div>
       `;
     }
 
     slideNode.dataset.theme = data.theme || 'fjord';
-    const tagline = slideNode.querySelector('.welcome-tagline');
-    const instruction = slideNode.querySelector('.welcome-instruction');
-    if (tagline) tagline.textContent = data.headline || '';
-    if (instruction) instruction.textContent = data.description || '';
-    slideNode.setAttribute(
-      'aria-label',
-      `${data.headline || 'Slide'}${data.description ? ` – ${data.description}` : ''}`
-    );
+    slideNode.setAttribute('aria-label', data.headline || 'Slide');
 
     if (data.image) {
       slideNode.style.setProperty('--slide-image', `url("${data.image}")`);
