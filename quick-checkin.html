@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="da">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SUBRA · Hurtig check-in</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="quick-checkin.css" />
+  </head>
+  <body>
+    <main class="qc-shell">
+      <header class="qc-header">
+        <div class="qc-brand">
+          <img src="assets/LOGO_SUBRA_sort_transp-web.png" alt="SUBRA" />
+          <div>
+            <p class="eyebrow">Hurtig selvbetjening</p>
+            <h1>Check ind / gå hjem</h1>
+            <p class="subline">Scan QR-koden på skærmen for at komme hertil.</p>
+          </div>
+        </div>
+        <div class="qc-status">
+          <p id="qc-status-text">Forbinder til backend...</p>
+          <button id="qc-sync" type="button">Synkroniser nu</button>
+        </div>
+      </header>
+
+      <section class="qc-controls">
+        <label class="qc-search">
+          <span>Søg medarbejder</span>
+          <input id="qc-search" type="search" placeholder="Navn eller afdeling" />
+        </label>
+        <div class="qc-counter" id="qc-counter">0 medarbejdere</div>
+      </section>
+
+      <section id="qc-employee-list" class="qc-employee-list" aria-live="polite"></section>
+
+      <footer class="qc-footer">
+        <p>Data gemmes direkte i SUBRA backend (Firestore eller lokal server) så status er opdateret overalt.</p>
+      </footer>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+    <script src="firebase-config.js"></script>
+    <script src="local-config.js"></script>
+    <script src="defaults.js"></script>
+    <script src="local-backend-adapter.js"></script>
+    <script src="firebase-adapter.js"></script>
+    <script src="quick-checkin.js"></script>
+  </body>
+</html>

@@ -488,6 +488,12 @@ button.ghost:hover,
   gap: 12px;
 }
 
+.panel-hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
 .slide-admin {
   flex-direction: column;
 }
