@@ -17,6 +17,7 @@ const seedEmployees = DEFAULTS.employees || [];
 const defaultSlides = DEFAULTS.slides || [];
 const DEFAULT_QR_LINKS = DEFAULTS.qrLinks || { employee: '', guest: '' };
 const DEFAULT_POLICY_LINKS = DEFAULTS.policyLinks || { nda: '' };
+const LOCAL_STATE_KEY = 'subra-local-state';
 
 const SLIDE_THEMES = [
   { value: 'fjord', label: 'Fjord · kølig blå' },
@@ -36,6 +37,7 @@ const SUMMARY_LABELS = {
 const STATUS_LABELS = {
   onsite: 'På kontoret',
   remote: 'Arbejder hjemmefra',
+  left: 'Gået hjem for i dag',
   away: 'Fravær',
   unknown: 'Ingen status registreret',
 };
@@ -141,6 +143,7 @@ if (typeof window !== 'undefined') {
 }
 
 async function init() {
+  hydrateFromLocalSnapshot();
   attachEvents();
   renderSlides();
   renderAll();
@@ -211,6 +214,7 @@ function normalizeSlides(slides) {
       description: slide.description || '',
       image: slide.image || '',
       storagePath: slide.storagePath || null,
+      uploadedName: slide.uploadedName || '',
       order: typeof slide.order === 'number' ? slide.order : index,
       createdAt: slide.createdAt || null,
       updatedAt: slide.updatedAt || null,
@@ -238,6 +242,30 @@ function serializeForStorage(data) {
 
 function cloneState(source = state) {
   return JSON.parse(JSON.stringify(source));
+}
+
+function hydrateFromLocalSnapshot() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(LOCAL_STATE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      state = ensureStateDefaults(parsed);
+      lastSyncedAt = state.updatedAt || null;
+    }
+  } catch (error) {
+    console.warn('Kunne ikke indlæse lokal state', error);
+  }
+}
+
+function saveLocalSnapshot() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(serializeForStorage(state)));
+  } catch (error) {
+    console.warn('Kunne ikke gemme lokal state', error);
+  }
 }
 
 async function bootstrapRemoteState() {
@@ -275,6 +303,7 @@ function commitState(nextState) {
   state.settings.kiosk.id =
     state.settings.kiosk.id || LOCAL_CONFIG?.stateDocId || LOCAL_CONFIG?.firebase?.stateDocId || 'local';
   state.settings.kiosk.lastSynced = state.updatedAt;
+  saveLocalSnapshot();
   void pushStateToBackend();
 }
 
@@ -369,6 +398,7 @@ async function pushStateToBackend() {
   if (isSyncing) return;
   if (!adapterReady || !dataAdapter?.isReady()) {
     appendSyncOutput('Backend er ikke klar – ændringer gemmes lokalt.');
+    saveLocalSnapshot();
     return;
   }
   isSyncing = true;
@@ -660,6 +690,8 @@ function formatStatusText(employee) {
       return `På kontoret siden ${timeString}`;
     case 'remote':
       return employee.statusNotes || `Arbejder hjemme (${timeString})`;
+    case 'left':
+      return employee.statusNotes || `Gået hjem for i dag (${timeString})`;
     case 'away':
       if (employee.absence?.from || employee.absence?.to) {
         const from = employee.absence?.from ? formatDate(employee.absence.from) : 'ukendt';
@@ -696,7 +728,7 @@ function handleDepartmentClick(event) {
   }
 
   if (action === 'checkout') {
-    updateEmployeeStatus(employee.id, 'remote', 'Arbejder hjemmefra efter checkout');
+    updateEmployeeStatus(employee.id, 'left', 'Gået hjem for i dag');
   }
 
   if (action === 'status') {
@@ -1058,11 +1090,16 @@ function renderEmployeeAdminList() {
 function renderScreensaverAdmin() {
   if (!elements.screensaverAdmin) return;
   const slides = state.screensaver?.slides || [];
+  const hintText =
+    '<p class="panel-hint">Uploadede billeder gemmes direkte i datafilen, så du slipper for ekstra Storage-opsætning.</p>';
   if (!slides.length) {
     elements.screensaverAdmin.innerHTML =
+      hintText +
       '<p class="drawer-empty">Ingen slides endnu. Tilføj dit første billede for at aktivere pauseskærmen.</p>';
   } else {
-    elements.screensaverAdmin.innerHTML = slides
+    elements.screensaverAdmin.innerHTML =
+      hintText +
+      slides
       .map((slide, index) => {
         const themeOptions = SLIDE_THEMES.map((theme) => {
           const selected = theme.value === slide.theme ? 'selected' : '';
@@ -1070,6 +1107,9 @@ function renderScreensaverAdmin() {
         }).join('');
 
         const previewStyle = slide.image ? `style="background-image:url('${escapeHtml(slide.image)}')"` : '';
+        const uploadMeta = slide.uploadedName
+          ? `<p class="slide-meta">Sidst uploadet: ${escapeHtml(slide.uploadedName)}</p>`
+          : '';
 
         return `
           <article class="slide-admin-card" data-slide-id="${slide.id}">
@@ -1088,6 +1128,7 @@ function renderScreensaverAdmin() {
                 <button type="button" data-action="move-down" ${index === slides.length - 1 ? 'disabled' : ''}>▼</button>
               </div>
               <button type="button" class="ghost danger" data-action="delete">Fjern</button>
+              ${uploadMeta}
             </div>
           </article>
         `;
@@ -1233,23 +1274,43 @@ async function handleSlideUploadChange(event) {
   if (!slide) return;
 
   try {
-    if (!adapterReady || !dataAdapter?.isReady()) {
-      throw new Error('Backend er ikke konfigureret til uploads');
+    const previousPath = slide.storagePath;
+    if (dataAdapter?.uploadSlide) {
+      const uploaded = await dataAdapter.uploadSlide(file, () => {});
+      slide.image = uploaded.downloadURL || uploaded.imageUrl || (await readFileAsDataUrl(file));
+      slide.storagePath = uploaded.storagePath || null;
+    } else {
+      const dataUrl = await readFileAsDataUrl(file);
+      slide.image = dataUrl;
+      slide.storagePath = null;
     }
-
-    const upload = await dataAdapter.uploadSlide(file);
-    slide.image = upload.downloadURL;
-    slide.storagePath = upload.storagePath || null;
+    slide.uploadedName = file.name || 'upload';
     slide.updatedAt = new Date().toISOString();
 
     renderSlides();
     renderScreensaverAdmin();
     commitState();
-    appendSyncOutput('Opdaterede pauseskærmsbilledet i backend.');
+    if (previousPath && previousPath !== slide.storagePath && dataAdapter?.deleteSlide) {
+      void dataAdapter.deleteSlide(previousPath);
+    }
+    appendSyncOutput('Opdaterede pauseskærmsbilledet og gemte det tilgængeligt for forsiden.');
   } catch (error) {
     console.error('Fejl ved upload af slide', error);
     appendSyncOutput(`Kunne ikke uploade billede: ${error.message}`);
   }
+}
+
+async function readFileAsDataUrl(file) {
+  if (typeof FileReader === 'undefined') {
+    throw new Error('Browseren understøtter ikke fil-læsning');
+  }
+
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Kunne ikke læse filen'));
+    reader.readAsDataURL(file);
+  });
 }
 
 async function deleteSlide(slideId) {
@@ -1314,12 +1375,12 @@ function handleQuickAction(event) {
 
   if (action === 'checkout') {
     state.employees.forEach((employee) => {
-      employee.status = 'away';
+      employee.status = 'left';
       employee.lastStatusChange = new Date().toISOString();
-      employee.statusNotes = 'Registreret som ude af bygningen.';
+      employee.statusNotes = 'Gået hjem for i dag (massehandling).';
       employee.absence = undefined;
     });
-    appendSyncOutput('Alle markeret som ude af bygningen.');
+    appendSyncOutput('Alle markeret som gået hjem for i dag.');
   }
 
   if (action === 'rollcall') {
