@@ -81,25 +81,35 @@
               <label for="guest-host">Besøger</label>
               <select id="guest-host" required></select>
             </div>
-            <div class="form-group">
-              <label for="guest-purpose">Formål</label>
-              <input id="guest-purpose" placeholder="Møde, interview, leverance..." />
+          <div class="form-group">
+            <label for="guest-purpose">Formål</label>
+            <input id="guest-purpose" placeholder="Møde, interview, leverance..." />
+          </div>
+          <fieldset class="form-group policy-checkboxes">
+            <legend>Politikker</legend>
+            <label class="checkbox">
+              <input type="checkbox" id="guest-nda" required />
+              Jeg har læst og accepterer
+              <a id="guest-nda-link" class="policy-link" href="#" target="_blank" rel="noopener">SUBRAs NDA</a>.
+            </label>
+            <div class="signature-block">
+              <div class="signature-header">
+                <p>Underskriv for at bekræfte retningslinjerne for IT- og datasikkerhed.</p>
+                <small>Brug musen eller touch for at skrive din underskrift.</small>
+              </div>
+              <div class="signature-pad">
+                <canvas id="guest-signature" aria-label="Underskrift"></canvas>
+                <div class="signature-toolbar">
+                  <span id="signature-status" class="signature-status">Ingen underskrift endnu.</span>
+                  <button type="button" class="ghost" id="signature-clear">Ryd</button>
+                </div>
+              </div>
+              <input type="hidden" name="guest-signature-data" id="guest-signature-data" />
             </div>
-            <fieldset class="form-group policy-checkboxes">
-              <legend>Politikker</legend>
-              <label class="checkbox">
-                <input type="checkbox" id="guest-nda" required />
-                Jeg har læst og accepterer
-                <a id="guest-nda-link" class="policy-link" href="#" target="_blank" rel="noopener">SUBRAs NDA</a>.
-              </label>
-              <label class="checkbox">
-                <input type="checkbox" id="guest-it" required />
-                Jeg accepterer retningslinjerne for IT- og datasikkerhed.
-              </label>
-            </fieldset>
-            <button type="submit" class="primary">Registrer gæst</button>
-            <p class="form-hint">Den valgte medarbejder får en notifikation (simuleret).</p>
-          </form>
+          </fieldset>
+          <button type="submit" class="primary">Registrer gæst</button>
+          <p class="form-hint">Den valgte medarbejder får en notifikation (simuleret).</p>
+        </form>
           <div class="guest-log" id="guest-log"></div>
         </div>
         <div class="self-service-card">
