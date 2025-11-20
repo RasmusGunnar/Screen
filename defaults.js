@@ -153,7 +153,7 @@ window.SUBRA_DEFAULTS = {
     },
   ],
   qrLinks: {
-    employee: 'https://subra-kiosk.example.com/employee',
+    employee: './quick-checkin.html',
     guest: 'https://subra-kiosk.example.com/guest',
   },
   policyLinks: {
