@@ -131,17 +131,19 @@ body {
   display: flex;
   justify-content: center;
   pointer-events: none;
+  z-index: 3;
 }
 
 .landing-inner {
   display: flex;
   gap: 12px;
-  background: rgba(12, 22, 32, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 22, 32, 0.48);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   padding: 12px 16px;
   border-radius: 16px;
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   pointer-events: auto;
 }
 
@@ -151,19 +153,19 @@ body {
   font-weight: 700;
   padding: 12px 16px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   transition: background 0.3s ease, transform 0.2s ease;
 }
 
 .landing-link:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.24);
   transform: translateY(-2px);
 }
 
 .landing-link.ghost {
-  background: rgba(255, 255, 255, 0.02);
-  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .hidden {
