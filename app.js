@@ -576,19 +576,59 @@ function attachEvents() {
   elements.qrForm?.addEventListener('submit', handleQrSubmit);
 }
 
+function ensureScreensaverChrome() {
+  if (!elements.screensaver) return null;
+
+  let slidesContainer = elements.screensaver.querySelector('.screensaver-slides');
+  if (!slidesContainer) {
+    slidesContainer = document.createElement('div');
+    slidesContainer.className = 'screensaver-slides';
+    elements.screensaver.prepend(slidesContainer);
+  }
+
+  let hint = elements.screensaver.querySelector('.screensaver-hint');
+  if (!hint) {
+    hint = document.createElement('p');
+    hint.className = 'screensaver-hint';
+    hint.textContent = 'Tryk for at starte registreringen';
+    elements.screensaver.appendChild(hint);
+  }
+
+  let landingBar = elements.screensaver.querySelector('.landing-bar');
+  if (!landingBar) {
+    landingBar = document.createElement('div');
+    landingBar.className = 'landing-bar';
+    const inner = document.createElement('div');
+    inner.className = 'landing-inner';
+    inner.innerHTML = `
+      <a class="landing-link" href="quick-checkin.html">Employee sign in</a>
+      <a class="landing-link ghost" href="visitor-registration.html">Visitor registration</a>
+    `;
+    landingBar.appendChild(inner);
+    elements.screensaver.appendChild(landingBar);
+  }
+
+  return { slidesContainer, hint, landingBar };
+}
+
 function renderSlides() {
   if (!elements.screensaver) return;
-  elements.screensaver.innerHTML = '';
+
+  const chrome = ensureScreensaverChrome();
+  const slidesContainer = chrome?.slidesContainer;
+  const hint = chrome?.hint;
+  if (!slidesContainer) return;
+
+  slidesContainer.innerHTML = '';
 
   const slides = state.screensaver?.slides || [];
   if (!slides.length) {
-    const hint = document.createElement('p');
-    hint.className = 'screensaver-hint';
-    hint.textContent = 'Tilføj et slide i adminportalen for at starte.';
-    elements.screensaver.appendChild(hint);
+    if (hint) hint.textContent = 'Tilføj et slide i adminportalen for at starte.';
     elements.slides = [];
     return;
   }
+
+  if (hint) hint.textContent = 'Tryk for at starte registreringen';
 
   slides.forEach((data) => {
     let slideNode;
@@ -624,10 +664,10 @@ function renderSlides() {
       slideNode.style.removeProperty('--slide-image');
     }
 
-    elements.screensaver.appendChild(slideNode);
+    slidesContainer.appendChild(slideNode);
   });
 
-  elements.slides = Array.from(elements.screensaver.querySelectorAll('.slide'));
+  elements.slides = Array.from(slidesContainer.querySelectorAll('.slide'));
   restartScreensaverCycle();
 }
 
