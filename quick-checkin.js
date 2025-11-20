@@ -97,7 +97,7 @@ function setupEvents() {
 
 async function bootstrapState() {
   if (!dataAdapter) {
-    setStatus('Ingen backend tilgængelig. Viser kun lokale data.', true);
+    setStatus('Kører i demo-tilstand uden backend. Viser lokale data.');
     renderEmployees();
     return;
   }
@@ -109,7 +109,8 @@ async function bootstrapState() {
     }
     adapterReady = dataAdapter.isReady ? dataAdapter.isReady() : true;
   } catch (error) {
-    setStatus(`Kunne ikke logge ind: ${error.message}`, true);
+    console.error('[QuickCheckin] Backend-login fejlede', error);
+    setStatus('Ingen forbindelse til backend (tjek Firebase-auth eller start lokal server). Viser lokale data.');
     renderEmployees();
     return;
   }
@@ -167,7 +168,8 @@ async function refreshFromBackend(showNotice = false) {
     }
     if (showNotice) setStatus('Ingen state fundet i backend – viser lokale defaults.', true);
   } catch (error) {
-    setStatus(`Kunne ikke hente data: ${error.message}`, true);
+    console.error('[QuickCheckin] Kunne ikke hente data', error);
+    setStatus('Ingen forbindelse til backend – viser lokale defaults.', false);
   }
 }
 
