@@ -11,13 +11,54 @@
 </head>
 <body>
   <div id="app-container">
-    <section id="screensaver" class="screensaver">
-      <p class="screensaver-hint">Tryk for at starte registreringen</p>
-      <div class="landing-bar">
-        <div class="landing-inner">
-          <a class="landing-link" href="quick-checkin.html">Employee sign in</a>
-          <a class="landing-link ghost" href="visitor-registration.html">Visitor registration</a>
+    <section id="screensaver" class="screensaver welcome-screen">
+      <div class="screensaver-slides"></div>
+
+      <div class="welcome-surface">
+        <div class="welcome-header">
+          <img src="assets/LOGO_SUBRA_sort_transp-web.png" alt="SUBRA" class="logo welcome-logo" />
         </div>
+
+      <div class="welcome-hero">
+        <div class="welcome-body">
+          <p class="welcome-eyebrow">Velkommen til</p>
+          <h1 class="welcome-title">SUBRA</h1>
+          <p class="welcome-sub">Tryk på Visitor In for at starte din registrering.</p>
+        </div>
+
+        <div class="welcome-qr-card" aria-live="polite">
+          <div class="welcome-qr-label">
+            <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24">
+              <path
+                d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 2v12h10V6H7Zm3 13h4v1h-4v-1Z"
+                fill="currentColor"
+              />
+            </svg>
+            <span>Scan to visit</span>
+          </div>
+          <div id="welcome-qr" class="welcome-qr"></div>
+        </div>
+      </div>
+
+      <a class="welcome-primary" href="visitor-registration.html">
+        <span>Visitor In</span>
+        <span aria-hidden="true" class="welcome-primary-icon">➜</span>
+      </a>
+
+      <nav class="welcome-nav" aria-label="Handlinger">
+        <a class="welcome-nav-link" href="quick-checkin.html">
+          <span class="welcome-nav-icon" aria-hidden="true">👤</span>
+          Employees
+        </a>
+        <a class="welcome-nav-link" href="#deliveries">
+          <span class="welcome-nav-icon" aria-hidden="true">📦</span>
+          Deliveries
+        </a>
+        <a class="welcome-nav-link" href="#visitor-out">
+          <span class="welcome-nav-icon" aria-hidden="true">↩</span>
+          Visitor Out
+        </a>
+      </nav>
       </div>
     </section>
 
