@@ -132,6 +132,17 @@ Admin (admin.html + admin.js)┘        └── Firebase Storage (screensaver/
 > **Tip:** Hvis du vil teste data før GoLive, kan du initialisere Firestore-dokumentet ved at importere
 > `defaults.js`-indholdet via adminportalens “Importer JSON”.
 
+### Firebase CLI
+
+Firebase Hosting og flere Firebase-værktøjer kræver Firebase CLI. Installer den globalt og verificér installationen:
+
+```
+npm install -g firebase-tools
+firebase --version
+```
+
+Hvis din maskine ikke kan nå npm-registret (fx 403 Forbidden), skal netværksadgangen justeres eller installationen køres fra en maskine med adgang.
+
 ## Daglig drift i Firebase-udgaven
 
 - **Synkronisering**:  
