@@ -20,7 +20,7 @@
           <h1>SUBRA Admin</h1>
           <p>Log ind for at administrere medarbejdere, slides og indstillinger.</p>
 
-          <form id="login-form" class="auth-form">
+          <form id="login-form" class="auth-form" novalidate>
             <label>
               <span>E-mail</span>
               <input type="email" id="login-email" autocomplete="username" required />
@@ -34,9 +34,9 @@
                 required
               />
             </label>
-            <button type="submit">Log ind</button>
-            <p id="login-error" class="auth-error"></p>
-            <p id="login-hint" class="auth-hint"></p>
+            <button type="submit" id="login-submit">Log ind</button>
+            <p id="login-error" class="auth-error" aria-live="assertive"></p>
+            <p id="login-hint" class="auth-hint" aria-live="polite"></p>
           </form>
         </div>
       </section>
