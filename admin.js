@@ -11,6 +11,8 @@ let app = null;
 let auth = null;
 let db = null;
 let storage = null;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD_LENGTH = 6;
 
 if (useLocalBackend) {
   localBackend.init({ baseUrl: LOCAL_CONFIG?.baseUrl || "" });
@@ -48,6 +50,8 @@ let isSyncing = false;
 const POLL_INTERVAL = 10000;
 let activeView = "overview";
 let permissionErrorNotified = false;
+let isAuthenticating = false;
+const SESSION_STORAGE_KEY = "subra-admin-session";
 
 // UI references
 const elements = {
@@ -55,6 +59,7 @@ const elements = {
   loginForm: document.getElementById("login-form"),
   loginEmail: document.getElementById("login-email"),
   loginPasscode: document.getElementById("login-passcode"),
+  loginSubmit: document.getElementById("login-submit"),
   loginError: document.getElementById("login-error"),
   loginHint: document.getElementById("login-hint"),
   adminMain: document.getElementById("admin-main"),
@@ -135,18 +140,39 @@ function initializeAdmin() {
   elements.policyForm?.addEventListener("submit", handlePolicySubmit);
 
   setupNavigation();
+  const storedAdmin = loadStoredAdmin();
+  if (storedAdmin) {
+    activeAdmin = storedAdmin;
+    updateActiveAdminLabel();
+  }
   restoreSession();
 }
 
 async function handleLoginSubmit(event) {
   event.preventDefault();
   elements.loginError.textContent = "";
+  setLoginLoading(true);
 
   const email = elements.loginEmail.value.trim().toLowerCase();
   const password = elements.loginPasscode.value;
 
   if (!email || !password) {
     elements.loginError.textContent = "Indtast både e-mail og adgangskode.";
+    setLoginLoading(false);
+    return;
+  }
+
+  if (!EMAIL_REGEX.test(email)) {
+    elements.loginError.textContent = "Indtast en gyldig e-mailadresse.";
+    elements.loginEmail.focus();
+    setLoginLoading(false);
+    return;
+  }
+
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    elements.loginError.textContent = `Adgangskoden skal være mindst ${MIN_PASSWORD_LENGTH} tegn.`;
+    elements.loginPasscode.focus();
+    setLoginLoading(false);
     return;
   }
 
@@ -188,10 +214,16 @@ async function handleLoginSubmit(event) {
     } else {
       elements.loginError.textContent = "Kunne ikke logge ind. Tjek forbindelsen og prøv igen.";
     }
+  } finally {
+    setLoginLoading(false);
   }
 }
 
 function restoreSession() {
+  setLoginLoading(true);
+  if (elements.loginHint) {
+    elements.loginHint.textContent = "Henter session...";
+  }
   if (useLocalBackend) {
     localBackend.onAuthStateChanged(async (user) => {
       if (user) {
@@ -205,6 +237,10 @@ function restoreSession() {
         await bootstrapRemoteState();
       } else {
         showLogin();
+      }
+      setLoginLoading(false);
+      if (elements.loginHint) {
+        elements.loginHint.textContent = ADMIN_HINT;
       }
     });
     return;
@@ -222,6 +258,10 @@ function restoreSession() {
       await bootstrapRemoteState();
     } else {
       showLogin();
+    }
+    setLoginLoading(false);
+    if (elements.loginHint) {
+      elements.loginHint.textContent = ADMIN_HINT;
     }
   });
 }
@@ -243,6 +283,7 @@ async function handleLogout() {
   renderAll();
   showLogin();
   elements.loginForm?.reset();
+  clearStoredAdmin();
   appendSyncLog("Du er nu logget ud.");
   permissionErrorNotified = false;
   activeView = "overview";
@@ -253,16 +294,64 @@ function showLogin() {
   stopSyncLoop();
   if (elements.loginView) elements.loginView.classList.remove("hidden");
   if (elements.adminMain) elements.adminMain.classList.add("hidden");
+  updateActiveAdminLabel();
 }
 
 function showAdmin() {
   if (elements.loginView) elements.loginView.classList.add("hidden");
   if (elements.adminMain) elements.adminMain.classList.remove("hidden");
   elements.loginForm?.reset();
+  updateActiveAdminLabel();
+  persistActiveAdmin();
+}
+
+function setLoginLoading(isLoading) {
+  isAuthenticating = isLoading;
+  if (elements.loginSubmit) {
+    elements.loginSubmit.disabled = isLoading;
+    elements.loginSubmit.classList.toggle("button-loading", isLoading);
+    elements.loginSubmit.textContent = isLoading ? "Logger ind..." : "Log ind";
+  }
+  if (elements.loginEmail) {
+    elements.loginEmail.disabled = isLoading;
+  }
+  if (elements.loginPasscode) {
+    elements.loginPasscode.disabled = isLoading;
+  }
+}
+
+function updateActiveAdminLabel() {
   if (elements.activeAdmin && activeAdmin) {
     const roleLabel = activeAdmin.role ? ` · rolle: ${activeAdmin.role}` : "";
     elements.activeAdmin.textContent = `Logget ind som ${activeAdmin.name} (${activeAdmin.email})${roleLabel}`;
+  } else if (elements.activeAdmin) {
+    elements.activeAdmin.textContent = "";
   }
+}
+
+function persistActiveAdmin() {
+  if (!activeAdmin || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(activeAdmin));
+  } catch (error) {
+    console.warn("Kunne ikke gemme session", error);
+  }
+}
+
+function loadStoredAdmin() {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.warn("Kunne ikke læse lokal session", error);
+    return null;
+  }
+}
+
+function clearStoredAdmin() {
+  if (typeof localStorage === "undefined") return;
+  localStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
 function setupNavigation() {

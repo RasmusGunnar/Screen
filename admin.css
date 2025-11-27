@@ -163,6 +163,25 @@ button:disabled {
   box-shadow: none;
 }
 
+button.button-loading {
+  position: relative;
+  color: transparent;
+}
+
+button.button-loading::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  animation: spinner 0.7s linear infinite;
+}
+
 button.ghost,
 .ghost {
   background: transparent;
@@ -187,6 +206,15 @@ button.ghost:hover,
   margin: 0;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+@keyframes spinner {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .top-nav {
@@ -693,3 +721,4 @@ button.ghost:hover,
     width: 100%;
   }
 }
+
